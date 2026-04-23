@@ -29,6 +29,19 @@ Thumbs.db
 # --- Build outputs / release packages ---
 releases/
 *.msi
+*.msi.sig
+*.nsis.sig
 *.exe
 *.zip
 !docs/**/*.zip
+
+# --- Tauri signing keys (NEVER commit) ---
+*.key
+**/match-creator.key
+**/match-creator
+!**/match-creator.pub
+
+# --- Local env overrides ---
+.env
+.env.local
+.env.*.local

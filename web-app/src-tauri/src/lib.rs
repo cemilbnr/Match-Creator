@@ -76,6 +76,7 @@ pub fn run() {
             }
             let _ = app.emit("session-changed", ());
         }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState { session_path })
         .setup(|app| {
             if cfg!(debug_assertions) {
