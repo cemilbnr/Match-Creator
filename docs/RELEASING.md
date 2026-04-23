@@ -54,7 +54,19 @@ Keep the three version strings in sync:
 - `web-app/src-tauri/tauri.conf.json` → `"version"`
 - `web-app/src-tauri/Cargo.toml` → `[package] version`
 
-Follow semver: `MAJOR.MINOR.PATCH`. Add `-beta` suffix while we're pre-1.0.
+**Versioning rule during beta (pre-1.0):** increment the PATCH for every
+release — `0.2.0` → `0.2.1` → `0.2.2` → … → `0.2.9`. Only when a release
+delivers a major feature milestone should the MINOR bump: `0.2.9` → `0.3.0`.
+
+The `-beta` suffix stays until `1.0.0`. Cargo.toml's `[package] version`
+does **not** carry the `-beta` suffix (Cargo's semver is stricter); the
+frontend and Tauri manifest both keep `-beta`.
+
+Examples:
+- Bugfix → `0.2.1-beta`
+- Another small tweak → `0.2.2-beta`
+- New scene-discovery feature → `0.3.0-beta`
+- After 10 minor milestones → `1.0.0` (drop `-beta`)
 
 ### 1.2 Update the changelog
 
