@@ -1,12 +1,18 @@
-import { Field, PageHeader, Section } from '../../components/ui';
+import { RefreshIcon } from '../../components/icons';
+import { Button, Field, PageHeader, Pill, Section } from '../../components/ui';
 import { TILE_SETS } from '../../data/tileSets';
 import { useSettings, type TilePreviewMode } from '../../store/settingsStore';
+import { useUpdateStore } from '../../store/updateStore';
 
 export function SettingsPanel() {
   const tilePreviewMode = useSettings((s) => s.tilePreviewMode);
   const activeTileSetId = useSettings((s) => s.activeTileSetId);
   const setTilePreviewMode = useSettings((s) => s.setTilePreviewMode);
   const setActiveTileSetId = useSettings((s) => s.setActiveTileSetId);
+
+  const currentVersion = useUpdateStore((s) => s.currentVersion);
+  const updateStatus = useUpdateStore((s) => s.status);
+  const checkForUpdates = useUpdateStore((s) => s.check);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -60,10 +66,65 @@ export function SettingsPanel() {
               </select>
             </Field>
           </Section>
+
+          <Section title="Updates">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm text-neutral-100">
+                  Current version{' '}
+                  <span className="font-mono text-neutral-300">v{currentVersion}</span>
+                </div>
+                <div className="mt-0.5 text-xs text-neutral-500">
+                  Match Creator auto-checks on launch. Use this to force a check.
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                leading={<RefreshIcon className={updateStatus.kind === 'checking' ? 'animate-spin' : ''} />}
+                onClick={() => {
+                  void checkForUpdates();
+                }}
+                disabled={updateStatus.kind === 'checking' || updateStatus.kind === 'downloading'}
+              >
+                {updateStatus.kind === 'checking' ? 'Checking…' : 'Check for updates'}
+              </Button>
+            </div>
+
+            <UpdateStatusLine status={updateStatus} />
+          </Section>
         </div>
       </div>
     </div>
   );
+}
+
+function UpdateStatusLine({ status }: { status: ReturnType<typeof useUpdateStore.getState>['status'] }) {
+  if (status.kind === 'none') {
+    const ts = new Date(status.checkedAt);
+    return (
+      <div className="text-xs text-neutral-500">
+        You&rsquo;re on the latest version. Last checked {ts.toLocaleTimeString()}.
+      </div>
+    );
+  }
+  if (status.kind === 'available') {
+    return (
+      <div className="flex items-center gap-2 text-xs">
+        <Pill tone="success">v{status.info.version} available</Pill>
+        <span className="text-neutral-500">
+          Use the banner at the top of the app to install.
+        </span>
+      </div>
+    );
+  }
+  if (status.kind === 'error') {
+    return (
+      <div className="rounded-md border border-rose-700/40 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-200">
+        {status.message}
+      </div>
+    );
+  }
+  return null;
 }
 
 function ModeOption({
