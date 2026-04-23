@@ -1,4 +1,4 @@
-import { Pill, Section } from '../../components/ui';
+import { Kbd, Pill, Section } from '../../components/ui';
 import { EraserIcon } from '../../components/icons';
 import type { Brush } from '../../types';
 import { PIECES } from '../../data/pieceTypes';
@@ -15,59 +15,58 @@ export function BrushPanel({ brush, shiftHeld, onSelect, onFillEmpty, onClear }:
   return (
     <div className="flex flex-col gap-5">
       <Section
+        variant="framed"
         title="Brushes"
         action={shiftHeld ? <Pill tone="warn">Lock filled</Pill> : null}
       >
-        <div className="flex flex-col gap-1">
-          {PIECES.map((p) => (
-            <BrushButton
-              key={p.id}
-              selected={brush === p.id}
-              onClick={() => onSelect(p.id)}
-              hotkey={p.key.toUpperCase()}
-              swatch={
-                <span
-                  className="inline-block h-4 w-4 rounded-sm"
-                  style={{ backgroundColor: p.hex }}
-                  aria-hidden
-                />
-              }
-              label={p.label}
-            />
-          ))}
+        {PIECES.map((p) => (
           <BrushButton
-            selected={brush === 'gap'}
-            onClick={() => onSelect('gap')}
-            hotkey="G"
+            key={p.id}
+            selected={brush === p.id}
+            onClick={() => onSelect(p.id)}
+            hotkey={p.key.toUpperCase()}
             swatch={
               <span
                 className="inline-block h-4 w-4 rounded-sm"
-                style={{
-                  backgroundImage:
-                    'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
-                  borderColor: 'rgb(64 64 64)',
-                }}
+                style={{ backgroundColor: p.hex }}
                 aria-hidden
               />
             }
-            label="Gap"
+            label={p.label}
           />
-          <BrushButton
-            selected={brush === 'eraser'}
-            onClick={() => onSelect('eraser')}
-            hotkey=""
-            swatch={
-              <span
-                className="inline-block h-4 w-4 rounded-sm border border-dashed border-neutral-500 bg-neutral-950"
-                aria-hidden
-              />
-            }
-            label="Eraser"
-          />
-        </div>
+        ))}
+        <BrushButton
+          selected={brush === 'gap'}
+          onClick={() => onSelect('gap')}
+          hotkey="G"
+          swatch={
+            <span
+              className="inline-block h-4 w-4 rounded-sm"
+              style={{
+                backgroundImage:
+                  'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
+                borderColor: 'rgb(64 64 64)',
+              }}
+              aria-hidden
+            />
+          }
+          label="Gap"
+        />
+        <BrushButton
+          selected={brush === 'eraser'}
+          onClick={() => onSelect('eraser')}
+          hotkey=""
+          swatch={
+            <span
+              className="inline-block h-4 w-4 rounded-sm border border-dashed border-neutral-500 bg-neutral-950"
+              aria-hidden
+            />
+          }
+          label="Eraser"
+        />
       </Section>
 
-      <Section title="Quick actions">
+      <Section variant="framed" title="Quick actions">
         <QuickActionButton
           onClick={onFillEmpty}
           disabled={brush === 'eraser'}
@@ -89,25 +88,49 @@ export function BrushPanel({ brush, shiftHeld, onSelect, onFillEmpty, onClear }:
         />
       </Section>
 
-      <Section title="Shortcuts">
-        <div className="flex flex-col gap-1.5 rounded-md border border-neutral-800 bg-neutral-950 p-2.5">
-          <ShortcutLine keys={['Left-click', 'Drag']} desc="Paint with the selected brush" />
-          <ShortcutLine keys={['Right-click']} desc="Erase a cell" />
-          <ShortcutLine
-            keys={['Shift', '+', 'Drag']}
-            desc="Paint empties only — locks cells that already have a piece"
-          />
-          <ShortcutLine keys={['Ctrl+F']} desc="Fill every empty cell with the brush" />
-          <ShortcutLine
-            keys={['Ctrl', '+', 'Right-click']}
-            desc="Wipe every cell of the clicked color"
-          />
-          <ShortcutLine
-            keys={['Alt', '+', 'Right-click']}
-            desc="Repaint every cell of the clicked color with the active brush"
-          />
-        </div>
+      <Section variant="framed" title="Shortcuts">
+        <ShortcutRow keys={[['Left-click'], ['Drag']]} desc="Paint with the selected brush" />
+        <ShortcutRow keys={[['Right-click']]} desc="Erase a cell" />
+        <ShortcutRow
+          keys={[['Shift'], ['Drag']]}
+          desc="Paint empties only — locks cells that already have a piece"
+        />
+        <ShortcutRow keys={[['Ctrl', 'F']]} desc="Fill every empty cell with the brush" />
+        <ShortcutRow
+          keys={[['Ctrl'], ['Right-click']]}
+          desc="Wipe every cell of the clicked color"
+        />
+        <ShortcutRow
+          keys={[['Alt'], ['Right-click']]}
+          desc="Repaint every cell of the clicked color with the active brush"
+        />
       </Section>
+    </div>
+  );
+}
+
+/** Vertical shortcut row — keys on top, description below. Handles
+ *  multi-chunk combos like [Ctrl] + [Right-click] cleanly. */
+function ShortcutRow({
+  keys,
+  desc,
+}: {
+  keys: string[][];
+  desc: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1 rounded-md px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-1">
+        {keys.map((chunk, ci) => (
+          <span key={ci} className="inline-flex items-center gap-0.5">
+            {ci > 0 && <span className="px-1 text-[10px] text-neutral-600">+</span>}
+            {chunk.map((k, ki) => (
+              <Kbd key={ki}>{k}</Kbd>
+            ))}
+          </span>
+        ))}
+      </div>
+      <div className="text-[11px] leading-snug text-neutral-500">{desc}</div>
     </div>
   );
 }
@@ -199,49 +222,31 @@ function BrushButton({
   label: string;
   hotkey: string;
 }) {
+  // Active state borrows from the iPadOS-style design pass: a subtle
+  // row-fill plus a 2px accent bar pinned to the left edge. Quieter than
+  // a bordered filled pill, but still unmistakable at a glance.
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-9 items-center justify-between gap-2 rounded-md border px-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 ${
+      className={`relative flex h-9 items-center justify-between gap-2 rounded-md px-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 ${
         selected
-          ? 'border-neutral-500 bg-neutral-800 text-neutral-50'
-          : 'border-neutral-800 bg-neutral-950 text-neutral-200 hover:border-neutral-700'
+          ? 'bg-white/[0.06] text-neutral-50'
+          : 'text-neutral-200 hover:bg-white/[0.035]'
       }`}
     >
+      {selected && (
+        <span
+          aria-hidden
+          className="absolute left-1 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-emerald-400"
+        />
+      )}
       <span className="flex items-center gap-2.5">
         {swatch}
         <span>{label}</span>
       </span>
-      {hotkey && (
-        <kbd className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
-          {hotkey}
-        </kbd>
-      )}
+      {hotkey && <Kbd>{hotkey}</Kbd>}
     </button>
   );
 }
 
-function ShortcutLine({ keys, desc }: { keys: string[]; desc: string }) {
-  return (
-    <div className="flex items-center gap-2 text-[11px] text-neutral-500">
-      <span className="flex shrink-0 items-center gap-0.5">
-        {keys.map((k) =>
-          k === '+' ? (
-            <span key={k} className="px-0.5 text-neutral-600">
-              +
-            </span>
-          ) : (
-            <kbd
-              key={k}
-              className="rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-[10px] font-medium text-neutral-300"
-            >
-              {k}
-            </kbd>
-          ),
-        )}
-      </span>
-      <span className="leading-snug">{desc}</span>
-    </div>
-  );
-}

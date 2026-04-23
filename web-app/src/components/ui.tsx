@@ -112,23 +112,41 @@ export function Input({ leading, className = '', ...rest }: InputProps) {
 
 // ---------- Section --------------------------------------------------------
 
+type SectionVariant = 'plain' | 'framed';
+
 interface SectionProps {
   title?: string;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
+  /**
+   * `plain` (default): just a label + spacing. Use for top-level content.
+   * `framed`: wraps children in a subtle card (hairline border, muted
+   * tint, 10px radius) for sidebar groups where visual grouping is the
+   * whole point. Keeps the same typography.
+   */
+  variant?: SectionVariant;
 }
 
-/**
- * A light-weight grouping block for sidebars/right-rails. No card chrome —
- * just a small uppercase label and spacing. Reserves the "card" treatment
- * for truly embedded content (match slots, board cards).
- */
-export function Section({ title, action, children, className = '' }: SectionProps) {
+export function Section({
+  title,
+  action,
+  children,
+  className = '',
+  variant = 'plain',
+}: SectionProps) {
+  const body =
+    variant === 'framed' ? (
+      <div className="flex flex-col gap-1 rounded-[10px] border border-white/5 bg-white/[0.015] p-1.5">
+        {children}
+      </div>
+    ) : (
+      <div className="flex flex-col gap-2">{children}</div>
+    );
   return (
-    <section className={`flex flex-col gap-2.5 ${className}`}>
+    <section className={`flex flex-col gap-2 ${className}`}>
       {(title || action) && (
-        <header className="flex items-center justify-between">
+        <header className="flex items-center justify-between px-1.5">
           {title && (
             <h3 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
               {title}
@@ -137,8 +155,21 @@ export function Section({ title, action, children, className = '' }: SectionProp
           {action}
         </header>
       )}
-      <div className="flex flex-col gap-2">{children}</div>
+      {body}
     </section>
+  );
+}
+
+// ---------- Keyboard hint -------------------------------------------------
+
+/** Tiny tactile pill for a single keycap. Inset shadow gives the 3D
+ *  feel the Claude design had without shrinking the typography the rest
+ *  of the app relies on. Use inside `ShortcutRow` / anywhere inline. */
+export function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="inline-flex h-[18px] items-center justify-center rounded border border-neutral-700 bg-neutral-900 px-1.5 text-[10px] font-medium text-neutral-300 shadow-[inset_0_-1px_0_rgba(0,0,0,0.25)]">
+      {children}
+    </kbd>
   );
 }
 
