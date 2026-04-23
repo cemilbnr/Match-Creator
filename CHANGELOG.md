@@ -6,6 +6,22 @@ Format is loosely based on [Keep a Changelog](https://keepachangelog.com/) and
 the project follows semantic versioning once it hits 1.0. Pre-1.0 releases are
 beta and may ship breaking changes between minor bumps.
 
+## [0.2.1-beta] — 2026-04-23
+
+### Fixed
+- `Check for updates` no longer surfaces a scary "Update failed" banner when
+  GitHub returns 404 (i.e. no release has been published yet). The UI now
+  shows "You're on the latest version" for that benign case and only
+  escalates to an error banner for actual HTTP / signature / transport
+  failures.
+- Startup update check now logs suppressed errors to devtools instead of
+  swallowing them completely, so debugging connectivity issues is easier.
+
+### Changed
+- Versioning rule during beta documented in `docs/RELEASING.md`: patch
+  bumps per release, minor bumps only for major feature milestones
+  (`0.2.9` → `0.3.0`, never skipping patches).
+
 ## [0.2.0-beta] — 2026-04-23
 
 ### Added
