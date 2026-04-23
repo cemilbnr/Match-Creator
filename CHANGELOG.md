@@ -6,6 +6,29 @@ Format is loosely based on [Keep a Changelog](https://keepachangelog.com/) and
 the project follows semantic versioning once it hits 1.0. Pre-1.0 releases are
 beta and may ship breaking changes between minor bumps.
 
+## [0.2.0-beta] — 2026-04-23
+
+### Added
+- `tauri-plugin-updater` integrated. The app polls
+  `https://github.com/cemilbnr/Match-Creator/releases/latest/download/latest.json`
+  on startup; users can also trigger a check from Settings → Updates.
+- Top-of-app update banner with progress bar for the download phase,
+  install spinner, and a dismissible error row.
+- Settings → Updates section showing the installed version and a manual
+  "Check for updates" button.
+- `docs/RELEASING.md` documents how to cut a signed release end-to-end
+  (key setup, version bump, signed MSI, `latest.json`, GitHub Release).
+
+### Changed
+- Version bumped to `0.2.0` across `package.json`, `tauri.conf.json`, and
+  `Cargo.toml`. First release built with the updater baked in.
+- Vite inlines `package.json` version into the app via `define`, so the
+  Settings panel and updater store stay in lockstep with the manifest.
+
+### Security
+- `.gitignore` now refuses `*.key`, the match-creator private key name, and
+  `.env*` files. Public key is committed inside `tauri.conf.json`.
+
 ## [0.1.0-beta] — 2026-04-23
 
 First public beta. End-to-end pipeline for designing match-3 boards, recording
