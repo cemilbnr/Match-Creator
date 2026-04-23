@@ -1,6 +1,9 @@
 export type PieceColor = 'red' | 'blue' | 'green' | 'yellow';
-export type Brush = PieceColor | 'eraser';
-export type Cell = PieceColor | null;
+/** `'gap'` is a structural board feature — a cell that never holds a tile
+ *  (e.g., a hole in an irregular board). Rendered distinctly from an
+ *  unpainted / empty cell. */
+export type Cell = PieceColor | 'gap' | null;
+export type Brush = PieceColor | 'eraser' | 'gap';
 
 export interface Board {
   id: string;

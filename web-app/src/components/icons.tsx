@@ -187,6 +187,70 @@ export function ChevronDownIcon(p: IconProps) {
   );
 }
 
+export function ViewfinderIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <path d="M3 8V5a2 2 0 0 1 2-2h3" />
+      <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+      <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+      <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+export function CropIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+      <path d="M18 22V8a2 2 0 0 0-2-2H2" />
+    </svg>
+  );
+}
+
+export function CheckIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <path d="m5 12 5 5 9-11" />
+    </svg>
+  );
+}
+
+export function CloseIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+export function UndoIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+    </svg>
+  );
+}
+
+export function RedoIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9a5 5 0 0 0 0 10h3" />
+    </svg>
+  );
+}
+
+export function BrushIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <path d="M9 11a3 3 0 0 1 3-3l7.5-5.5a2 2 0 0 1 2.8 2.8L17 13a3 3 0 0 1-3 3" />
+      <path d="M7 13a4 4 0 0 0-4 4c0 1.5-1 2-2 2 1.5 2 4 3 6 3a4 4 0 0 0 4-4 4 4 0 0 0-4-5Z" />
+    </svg>
+  );
+}
+
 // Pipeline step icons for sidebar nav
 export { GridIcon as BoardsIcon };
 export { FilmIcon as GameplayIcon };

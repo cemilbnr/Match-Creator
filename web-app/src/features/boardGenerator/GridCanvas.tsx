@@ -78,19 +78,27 @@ export function GridCanvas({
                   ...cellStyleFor(cell, mode, set),
                 }}
                 onMouseDown={(e) => {
-                  // Ctrl + right-click on a painted cell wipes every cell of
-                  // that same color. One-shot action — no drag-paint follow-up.
-                  if (e.button === 2 && (e.ctrlKey || e.metaKey) && cell !== null) {
+                  // Ctrl + right-click on a painted piece cell wipes every
+                  // cell of that same color. Gaps aren't a color, skip.
+                  if (
+                    e.button === 2 &&
+                    (e.ctrlKey || e.metaKey) &&
+                    cell !== null &&
+                    cell !== 'gap'
+                  ) {
                     onEraseColor(cell);
                     return;
                   }
-                  // Alt + right-click on a painted cell repaints every cell
-                  // of that color with the currently selected brush.
+                  // Alt + right-click on a painted piece cell repaints every
+                  // cell of that color with the currently selected piece
+                  // brush. No-op for gap cells / gap / eraser brushes.
                   if (
                     e.button === 2 &&
                     e.altKey &&
                     cell !== null &&
+                    cell !== 'gap' &&
                     brush !== 'eraser' &&
+                    brush !== 'gap' &&
                     cell !== brush
                   ) {
                     onReplaceColor(cell, brush);
