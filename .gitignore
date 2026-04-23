@@ -1,0 +1,34 @@
+# --- Node / Vite ---
+web-app/node_modules/
+web-app/dist/
+web-app/.vite/
+web-app/*.local
+
+# --- Tauri / Rust ---
+web-app/src-tauri/target/
+web-app/src-tauri/gen/schemas/
+web-app/src-tauri/Cargo.lock
+
+# --- Python / Blender addon ---
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# --- Claude / planning artefacts live outside the repo ---
+.claude/settings.local.json
+
+# --- Build outputs / release packages ---
+releases/
+*.msi
+*.exe
+*.zip
+!docs/**/*.zip
