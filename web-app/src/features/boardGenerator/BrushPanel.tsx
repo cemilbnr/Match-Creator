@@ -1,4 +1,5 @@
 import { Pill, Section } from '../../components/ui';
+import { EraserIcon } from '../../components/icons';
 import type { Brush } from '../../types';
 import { PIECES } from '../../data/pieceTypes';
 
@@ -7,21 +8,21 @@ interface Props {
   shiftHeld: boolean;
   onSelect: (brush: Brush) => void;
   onFillEmpty: () => void;
+  onClear: () => void;
 }
 
-export function BrushPanel({ brush, shiftHeld, onSelect, onFillEmpty }: Props) {
+export function BrushPanel({ brush, shiftHeld, onSelect, onFillEmpty, onClear }: Props) {
   return (
-    <Section
-      title="Brushes"
-      action={shiftHeld ? <Pill tone="warn">Lock filled</Pill> : null}
-    >
-      <div className="flex flex-col gap-1">
-        {PIECES.map((p) => {
-          const selected = brush === p.id;
-          return (
+    <div className="flex flex-col gap-5">
+      <Section
+        title="Brushes"
+        action={shiftHeld ? <Pill tone="warn">Lock filled</Pill> : null}
+      >
+        <div className="flex flex-col gap-1">
+          {PIECES.map((p) => (
             <BrushButton
               key={p.id}
-              selected={selected}
+              selected={brush === p.id}
               onClick={() => onSelect(p.id)}
               hotkey={p.key.toUpperCase()}
               swatch={
@@ -33,79 +34,155 @@ export function BrushPanel({ brush, shiftHeld, onSelect, onFillEmpty }: Props) {
               }
               label={p.label}
             />
-          );
-        })}
-
-        <BrushButton
-          selected={brush === 'gap'}
-          onClick={() => onSelect('gap')}
-          hotkey="G"
-          swatch={
-            <span
-              className="inline-block h-4 w-4 rounded-sm"
-              style={{
-                backgroundImage:
-                  'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
-                borderColor: 'rgb(64 64 64)',
-              }}
-              aria-hidden
-            />
-          }
-          label="Gap"
-        />
-
-        <BrushButton
-          selected={brush === 'eraser'}
-          onClick={() => onSelect('eraser')}
-          hotkey=""
-          swatch={
-            <span
-              className="inline-block h-4 w-4 rounded-sm border border-dashed border-neutral-500 bg-neutral-950"
-              aria-hidden
-            />
-          }
-          label="Eraser"
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={onFillEmpty}
-        disabled={brush === 'eraser'}
-        className="flex h-9 items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 text-sm font-medium text-neutral-200 transition hover:border-neutral-600 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
-        title={
-          brush === 'eraser'
-            ? 'Pick a color or Gap brush first'
-            : 'Fill every empty cell with the selected brush'
-        }
-      >
-        <span>Fill empty</span>
-        <kbd className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
-          Ctrl+F
-        </kbd>
-      </button>
-
-      <div className="flex flex-col gap-1.5 rounded-md border border-neutral-800 bg-neutral-950 p-2.5">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-          Shortcuts
+          ))}
+          <BrushButton
+            selected={brush === 'gap'}
+            onClick={() => onSelect('gap')}
+            hotkey="G"
+            swatch={
+              <span
+                className="inline-block h-4 w-4 rounded-sm"
+                style={{
+                  backgroundImage:
+                    'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
+                  borderColor: 'rgb(64 64 64)',
+                }}
+                aria-hidden
+              />
+            }
+            label="Gap"
+          />
+          <BrushButton
+            selected={brush === 'eraser'}
+            onClick={() => onSelect('eraser')}
+            hotkey=""
+            swatch={
+              <span
+                className="inline-block h-4 w-4 rounded-sm border border-dashed border-neutral-500 bg-neutral-950"
+                aria-hidden
+              />
+            }
+            label="Eraser"
+          />
         </div>
-        <ShortcutLine keys={['Left-click', 'Drag']} desc="Paint with the selected brush" />
-        <ShortcutLine keys={['Right-click']} desc="Erase a cell" />
-        <ShortcutLine
-          keys={['Shift', '+', 'Drag']}
-          desc="Paint empties only — locks cells that already have a piece"
+      </Section>
+
+      <Section title="Quick actions">
+        <QuickActionButton
+          onClick={onFillEmpty}
+          disabled={brush === 'eraser'}
+          icon={<FillIconFor brush={brush} />}
+          label="Fill empty"
+          hotkey="Ctrl+F"
+          title={
+            brush === 'eraser'
+              ? 'Pick a color or Gap brush first'
+              : 'Fill every empty cell with the selected brush'
+          }
         />
-        <ShortcutLine keys={['Ctrl+F']} desc="Fill every empty cell with the brush" />
-        <ShortcutLine
-          keys={['Ctrl', '+', 'Right-click']}
-          desc="Wipe every cell of the clicked color"
+        <QuickActionButton
+          onClick={onClear}
+          icon={<EraserIcon className="text-neutral-400" />}
+          label="Clear canvas"
+          tone="danger"
+          title="Wipe every cell on the board"
         />
-        <ShortcutLine
-          keys={['Alt', '+', 'Right-click']}
-          desc="Repaint every cell of the clicked color with the active brush"
-        />
-      </div>
-    </Section>
+      </Section>
+
+      <Section title="Shortcuts">
+        <div className="flex flex-col gap-1.5 rounded-md border border-neutral-800 bg-neutral-950 p-2.5">
+          <ShortcutLine keys={['Left-click', 'Drag']} desc="Paint with the selected brush" />
+          <ShortcutLine keys={['Right-click']} desc="Erase a cell" />
+          <ShortcutLine
+            keys={['Shift', '+', 'Drag']}
+            desc="Paint empties only — locks cells that already have a piece"
+          />
+          <ShortcutLine keys={['Ctrl+F']} desc="Fill every empty cell with the brush" />
+          <ShortcutLine
+            keys={['Ctrl', '+', 'Right-click']}
+            desc="Wipe every cell of the clicked color"
+          />
+          <ShortcutLine
+            keys={['Alt', '+', 'Right-click']}
+            desc="Repaint every cell of the clicked color with the active brush"
+          />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function FillIconFor({ brush }: { brush: Brush }) {
+  if (brush === 'eraser') {
+    return (
+      <span
+        className="inline-block h-4 w-4 rounded-sm border border-dashed border-neutral-600 bg-neutral-950"
+        aria-hidden
+      />
+    );
+  }
+  if (brush === 'gap') {
+    return (
+      <span
+        className="inline-block h-4 w-4 rounded-sm border border-neutral-600"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
+        }}
+        aria-hidden
+      />
+    );
+  }
+  const hex = PIECES.find((p) => p.id === brush)?.hex;
+  return (
+    <span
+      className="inline-block h-4 w-4 rounded-sm"
+      style={{ backgroundColor: hex }}
+      aria-hidden
+    />
+  );
+}
+
+function QuickActionButton({
+  onClick,
+  disabled,
+  icon,
+  label,
+  hotkey,
+  tone = 'neutral',
+  title,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  hotkey?: string;
+  tone?: 'neutral' | 'danger';
+  title?: string;
+}) {
+  const danger = tone === 'danger';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? label}
+      className={`flex h-9 items-center justify-between gap-2 rounded-md border px-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        danger
+          ? 'border-neutral-800 bg-neutral-950 text-neutral-200 hover:border-rose-600/60 hover:bg-rose-500/10 hover:text-rose-200'
+          : 'border-neutral-800 bg-neutral-950 text-neutral-200 hover:border-neutral-600 hover:bg-neutral-900'
+      }`}
+    >
+      <span className="flex items-center gap-2.5">
+        {icon}
+        <span>{label}</span>
+      </span>
+      {hotkey && (
+        <kbd className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
+          {hotkey}
+        </kbd>
+      )}
+    </button>
   );
 }
 

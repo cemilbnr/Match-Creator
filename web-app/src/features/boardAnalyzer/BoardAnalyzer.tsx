@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BrushIcon,
   CheckIcon,
-  CloseIcon,
   CropIcon,
   EraserIcon,
   RedoIcon,
@@ -40,10 +39,12 @@ type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 const ALL_HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
+type DragTarget = 'region' | 'calibration';
+
 type DragState =
-  | { kind: 'draw'; anchorX: number; anchorY: number; id: string }
-  | { kind: 'move'; id: string; offsetX: number; offsetY: number }
-  | { kind: 'resize'; id: string; handle: Handle; origin: Rect }
+  | { kind: 'draw'; target: DragTarget; anchorX: number; anchorY: number; id: string }
+  | { kind: 'move'; target: DragTarget; id: string; offsetX: number; offsetY: number }
+  | { kind: 'resize'; target: DragTarget; id: string; handle: Handle; origin: Rect }
   | null;
 
 // ---------- History hook ---------------------------------------------------
@@ -245,6 +246,37 @@ function pointInUnion(p: { x: number; y: number }, rects: Rect[]): boolean {
   return rects.some((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
 }
 
+/** Draw the image into an offscreen canvas, scale to fit `maxDim` on the
+ *  longer side, and return a JPEG data URL. Used to cache a tiny
+ *  reference screenshot alongside the saved Board so the Library can
+ *  show it next to the reconstructed layout. */
+async function generateImageThumbnail(
+  imageUrl: string,
+  maxDim: number,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(null);
+      ctx.drawImage(img, 0, 0, w, h);
+      try {
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = imageUrl;
+  });
+}
+
 // ---------- Brush palette --------------------------------------------------
 
 type BrushValue = PieceColor | 'eraser' | 'gap';
@@ -260,6 +292,13 @@ export function BoardAnalyzer() {
   const [cropMode, setCropMode] = useState(false);
   const [draft, setDraft] = useState<Rect | null>(null);
 
+  // Crop mode has two sub-modes. `calibrate` lets the user draw a single
+  // reference cell whose edge length locks the grid pitch. `regions` is
+  // the normal "mark board areas" phase. Calibration is mandatory — until
+  // it's set, no region analysis runs.
+  const [cropSubMode, setCropSubMode] = useState<'calibrate' | 'regions'>('calibrate');
+  const [calibration, setCalibration] = useState<Rect | null>(null);
+
   const [brush, setBrush] = useState<BrushValue>('red');
 
   const [analyses, setAnalyses] = useState<AnalysisResult[]>([]);
@@ -271,6 +310,33 @@ export function BoardAnalyzer() {
 
   const saveBoard = useLibrary((s) => s.saveBoard);
   const openLibrary = useUI((s) => s.setPanel);
+
+  // File input is owned at the top level so both the Source panel and
+  // anywhere else (e.g. toolbar Future Self) can trigger it.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
+
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => { setZoom(1); }, [imageUrl]);
+
+  // A small downscaled JPEG of the current screenshot. Stored with the
+  // saved Board so the Library can display a side-by-side reference next
+  // to the reconstructed layout. Regenerated whenever the source image
+  // changes.
+  const [sourceThumbnail, setSourceThumbnail] = useState<string | null>(null);
+  useEffect(() => {
+    if (!imageUrl) {
+      setSourceThumbnail(null);
+      return;
+    }
+    let cancelled = false;
+    generateImageThumbnail(imageUrl, 320).then((dataUrl) => {
+      if (!cancelled) setSourceThumbnail(dataUrl);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageUrl]);
 
   // --- Image loading ------------------------------------------------------
 
@@ -288,6 +354,8 @@ export function BoardAnalyzer() {
       setNaturalSize(null);
       setDraft(null);
       setCropMode(false);
+      setCalibration(null);
+      setCropSubMode('calibrate');
       setAnalyses([]);
       setSessionBoardId(null);
       history.reset([]);
@@ -301,6 +369,8 @@ export function BoardAnalyzer() {
     setNaturalSize(null);
     setDraft(null);
     setCropMode(false);
+    setCalibration(null);
+    setCropSubMode('calibrate');
     setAnalyses([]);
     setSessionBoardId(null);
     history.reset([]);
@@ -330,6 +400,13 @@ export function BoardAnalyzer() {
   // Group overlapping rects so each connected component is analyzed as a
   // single region (bounding box union). Disjoint rects stay independent.
   const groups = useMemo(() => computeGroups(rects), [rects]);
+
+  // 1:1 grids — the user draws a single reference cell during calibration,
+  // and we derive one scalar pitch from its (supposed-to-be-equal) axes.
+  const cellSize = useMemo(
+    () => (calibration ? (calibration.w + calibration.h) / 2 : null),
+    [calibration],
+  );
 
   // --- Keyboard: Ctrl+Z / Ctrl+Y / Ctrl+S / Escape -------------------------
 
@@ -376,7 +453,7 @@ export function BoardAnalyzer() {
   // --- Live re-analysis: debounced so drags don't thrash the CPU ----------
 
   useEffect(() => {
-    if (!imageUrl || !naturalSize || groups.length === 0) {
+    if (!imageUrl || !naturalSize || groups.length === 0 || !cellSize) {
       setAnalyses([]);
       return;
     }
@@ -385,8 +462,9 @@ export function BoardAnalyzer() {
     const t = window.setTimeout(() => {
       // Analyze each group's bbox. The analyzer's `rectId` field is what
       // we pass as the bbox id (== group id), so results key cleanly to
-      // groups on the render side.
-      void analyzeImage(imageUrl, groups.map((g) => g.bbox)).then((results) => {
+      // groups on the render side. Grid size is derived arithmetically
+      // from the calibration-supplied cell pitch.
+      void analyzeImage(imageUrl, groups.map((g) => g.bbox), cellSize).then((results) => {
         if (cancelled) return;
         setAnalyses(results);
         setAnalyzing(false);
@@ -396,11 +474,27 @@ export function BoardAnalyzer() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [imageUrl, naturalSize, groups]);
+  }, [imageUrl, naturalSize, groups, cellSize]);
 
   // --- Crop-mode ✓ / × ----------------------------------------------------
 
+  /** Commit whatever is currently being drawn for the active sub-mode and
+   *  advance. In `calibrate` that means accepting the draft as the
+   *  calibration rect and switching to `regions`. In `regions` it means
+   *  committing any in-progress region draft and exiting crop mode. */
   const confirmCrop = () => {
+    if (cropSubMode === 'calibrate') {
+      if (draft && draft.w >= MIN_RECT_SIZE && draft.h >= MIN_RECT_SIZE) {
+        setCalibration(draft);
+        setDraft(null);
+        setCropSubMode('regions');
+      } else if (calibration) {
+        // No new draft but calibration already exists — just advance.
+        setCropSubMode('regions');
+      }
+      return;
+    }
+    // regions sub-mode
     if (draft && draft.w >= MIN_RECT_SIZE && draft.h >= MIN_RECT_SIZE) {
       history.commit([...rects, draft]);
     }
@@ -408,9 +502,31 @@ export function BoardAnalyzer() {
     setCropMode(false);
   };
 
+  /** Discard the current in-progress draft and exit crop mode. Committed
+   *  regions and the calibration rect are preserved. */
   const cancelCrop = () => {
     setDraft(null);
     setCropMode(false);
+  };
+
+  const toggleCropMode = () => {
+    setCropMode((v) => {
+      const entering = !v;
+      if (entering) {
+        setCropSubMode(calibration ? 'regions' : 'calibrate');
+        setDraft(null);
+      }
+      return entering;
+    });
+  };
+
+  /** Discard the calibration rect and re-enter the calibrate sub-mode so
+   *  the user can draw a new reference cell. Existing regions are kept;
+   *  they'll re-analyze with the new cell size once calibration is set. */
+  const recalibrate = () => {
+    setCalibration(null);
+    setCropSubMode('calibrate');
+    setDraft(null);
   };
 
   const deleteRect = (id: string) => {
@@ -455,12 +571,7 @@ export function BoardAnalyzer() {
    *  that region's classified color; cells outside every region become
    *  `'gap'`, so a piecewise composed board saves as one coherent layout. */
   const buildComposedBoard = (id: string, name: string): Board | null => {
-    if (analyses.length === 0 || groups.length === 0) return null;
-    const firstGroup = groups[0]!;
-    const firstAnalysis = analyses.find((a) => a.rectId === firstGroup.id);
-    if (!firstAnalysis || firstAnalysis.cols <= 0 || firstAnalysis.rows <= 0) {
-      return null;
-    }
+    if (analyses.length === 0 || groups.length === 0 || !cellSize) return null;
     const allRects = groups.flatMap((g) => g.rects);
     const envelope = {
       x: Math.min(...allRects.map((r) => r.x)),
@@ -470,10 +581,10 @@ export function BoardAnalyzer() {
     };
     const envW = envelope.x2 - envelope.x;
     const envH = envelope.y2 - envelope.y;
-    const cellW = firstGroup.bbox.w / firstAnalysis.cols;
-    const cellH = firstGroup.bbox.h / firstAnalysis.rows;
-    const cols = Math.max(1, Math.round(envW / cellW));
-    const rows = Math.max(1, Math.round(envH / cellH));
+    const cols = Math.max(1, Math.round(envW / cellSize));
+    const rows = Math.max(1, Math.round(envH / cellSize));
+    const cellW = envW / cols;
+    const cellH = envH / rows;
 
     const layout: Cell[][] = [];
     for (let r = 0; r < rows; r++) {
@@ -499,7 +610,17 @@ export function BoardAnalyzer() {
     }
 
     const now = Date.now();
-    return { id, name, width: cols, height: rows, tileSet: 'default', layout, createdAt: now, updatedAt: now };
+    return {
+      id,
+      name,
+      width: cols,
+      height: rows,
+      tileSet: 'default',
+      layout,
+      createdAt: now,
+      updatedAt: now,
+      ...(sourceThumbnail ? { sourceImage: sourceThumbnail } : {}),
+    };
   };
 
   const newBoardId = () =>
@@ -575,21 +696,9 @@ export function BoardAnalyzer() {
       <PageHeader
         eyebrow="Analyzer"
         title="Board Analyzer"
-        subtitle="Load a board screenshot, mask everything but the board, analyze the grid."
+        subtitle="Recover a board from a screenshot."
         actions={
           <>
-            {savedFlash && <Pill tone="success">Saved</Pill>}
-            {analyzing && <Pill tone="neutral">Analyzing…</Pill>}
-            {sessionBoardId && savedBoardName && !savedFlash && (
-              <button
-                type="button"
-                onClick={() => openLibrary('board-library')}
-                className="text-[11px] text-neutral-400 underline-offset-2 hover:text-neutral-100 hover:underline"
-                title={`Open "${savedBoardName}" in the Library`}
-              >
-                {savedBoardName}
-              </button>
-            )}
             <Button
               variant="secondary"
               disabled={!canSave}
@@ -621,25 +730,42 @@ export function BoardAnalyzer() {
           </>
         }
       />
+      <StatusStrip
+        analyzing={analyzing}
+        savedFlash={savedFlash}
+        sessionBoardId={sessionBoardId}
+        savedBoardName={savedBoardName}
+        onOpenLibrary={() => openLibrary('board-library')}
+        cropMode={cropMode}
+      />
       <div className="grid min-h-0 flex-1 grid-cols-[240px_1fr_260px] overflow-hidden">
         <LeftPanel
           hasImage={hasImage}
           cropMode={cropMode}
           rectCount={rects.length}
+          calibrated={!!calibration}
           analyzed={analyses.length > 0}
           saved={!!sessionBoardId}
+          onPickImageClick={openFilePicker}
+          onClearImage={clearImage}
         />
         <CenterWorkspace
           imageUrl={imageUrl}
           naturalSize={naturalSize}
           onNaturalSize={setNaturalSize}
           onLoadFile={loadFile}
-          onPickImage={loadFile}
-          onClearImage={clearImage}
           cropMode={cropMode}
-          onToggleCropMode={() => setCropMode((v) => !v)}
+          onToggleCropMode={toggleCropMode}
           onConfirmCrop={confirmCrop}
           onCancelCrop={cancelCrop}
+          cropSubMode={cropSubMode}
+          setCropSubMode={setCropSubMode}
+          onRecalibrate={recalibrate}
+          calibration={calibration}
+          setCalibration={setCalibration}
+          cellSize={cellSize}
+          zoom={zoom}
+          onZoomChange={setZoom}
           rects={rects}
           draft={draft}
           allRects={allRects}
@@ -663,6 +789,18 @@ export function BoardAnalyzer() {
           analyses={analyses}
         />
       </div>
+      {/* Shared file picker — triggered by the Source panel's Choose image button. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) loadFile(f);
+          e.target.value = '';
+        }}
+      />
       {saveModalOpen && analyses.length > 0 && (
         <SaveAsModal
           preview={(() => {
@@ -787,53 +925,64 @@ function SaveAsModal({
 
 function LeftPanel({
   hasImage,
-  cropMode,
   rectCount,
+  calibrated,
   analyzed,
   saved,
+  onPickImageClick,
+  onClearImage,
 }: {
   hasImage: boolean;
   cropMode: boolean;
   rectCount: number;
+  calibrated: boolean;
   analyzed: boolean;
   saved: boolean;
+  onPickImageClick: () => void;
+  onClearImage: () => void;
 }) {
   const steps = [
-    {
-      label: 'Load a screenshot',
-      done: hasImage,
-      hint: 'Drop, paste (Ctrl+V), or use Choose image.',
-    },
-    {
-      label: 'Enable Crop mode',
-      done: hasImage && (cropMode || rectCount > 0),
-      hint: 'Toggle the crop icon in the bottom bar.',
-    },
-    {
-      label: 'Mark board area',
-      done: rectCount > 0,
-      hint: 'Drag rectangles around the board. Outside stays dark.',
-    },
-    {
-      label: 'Review analysis',
-      done: analyzed,
-      hint: 'Grid + piece colors appear on the image. Retouch with the brush.',
-    },
-    {
-      label: 'Save',
-      done: saved,
-      hint: 'Send the detected board to your Library.',
-    },
+    { label: 'Load a screenshot', done: hasImage },
+    { label: 'Calibrate a cell', done: calibrated },
+    { label: 'Mark board area', done: rectCount > 0 },
+    { label: 'Review analysis', done: analyzed },
+    { label: 'Save', done: saved },
   ];
 
   return (
-    <aside className="flex flex-col gap-4 border-r border-neutral-800 bg-neutral-950 p-4">
-      <Section title="Workflow">
-        <ol className="flex flex-col gap-3">
+    <aside className="flex flex-col gap-5 border-r border-neutral-800 bg-neutral-950 p-4">
+      <Section title="Source">
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={onPickImageClick}
+            className="flex h-9 items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 text-sm font-medium text-neutral-200 transition hover:border-neutral-600 hover:bg-neutral-900"
+          >
+            <span className="flex items-center gap-2.5">
+              <ViewfinderIcon />
+              <span>Choose image…</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onClearImage}
+            disabled={!hasImage}
+            className="flex h-9 items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 text-sm font-medium text-neutral-200 transition hover:border-rose-600/60 hover:bg-rose-500/10 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span className="flex items-center gap-2.5">
+              <TrashIcon className="text-neutral-400" />
+              <span>Remove</span>
+            </span>
+          </button>
+        </div>
+      </Section>
+
+      <Section title="Onboarding">
+        <ol className="flex flex-col gap-1.5">
           {steps.map((s, i) => (
-            <li key={i} className="flex gap-2.5">
+            <li key={i} className="flex items-center gap-2.5">
               <span
-                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${
                   s.done
                     ? 'border-emerald-500/60 bg-emerald-500/20 text-emerald-200'
                     : 'border-neutral-700 bg-neutral-900 text-neutral-400'
@@ -841,37 +990,51 @@ function LeftPanel({
               >
                 {s.done ? <CheckIcon className="h-3 w-3" /> : i + 1}
               </span>
-              <div className="min-w-0">
-                <div
-                  className={`text-sm ${
-                    s.done ? 'text-neutral-100' : 'text-neutral-300'
-                  }`}
-                >
-                  {s.label}
-                </div>
-                <div className="text-[11px] leading-snug text-neutral-500">
-                  {s.hint}
-                </div>
-              </div>
+              <span
+                className={`text-sm ${s.done ? 'text-neutral-100' : 'text-neutral-300'}`}
+              >
+                {s.label}
+              </span>
             </li>
           ))}
         </ol>
       </Section>
 
       <Section title="Shortcuts">
-        <ul className="flex flex-col gap-1 text-[11px] text-neutral-500">
-          <li>
-            <Kbd>Ctrl+V</Kbd> paste image
-          </li>
-          <li>
-            <Kbd>Ctrl+Z</Kbd> / <Kbd>Ctrl+Y</Kbd> undo, redo
-          </li>
-          <li>
-            <Kbd>Esc</Kbd> cancel crop draft
-          </li>
-        </ul>
+        <div className="flex flex-col gap-1.5 rounded-md border border-neutral-800 bg-neutral-950 p-2.5">
+          <ShortcutRow keys={['Ctrl', '+', 'V']} desc="Paste image from clipboard" />
+          <ShortcutRow keys={['Ctrl', '+', 'Z']} desc="Undo" />
+          <ShortcutRow keys={['Ctrl', '+', 'Y']} desc="Redo" />
+          <ShortcutRow keys={['Ctrl', '+', 'S']} desc="Save (in-place when possible)" />
+          <ShortcutRow keys={['Esc']} desc="Cancel the in-progress crop draft" />
+          <ShortcutRow keys={['Right-click']} desc="Delete a region in Regions sub-mode" />
+        </div>
       </Section>
     </aside>
+  );
+}
+
+function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-neutral-500">
+      <span className="flex shrink-0 items-center gap-0.5">
+        {keys.map((k) =>
+          k === '+' ? (
+            <span key={k} className="px-0.5 text-neutral-600">
+              +
+            </span>
+          ) : (
+            <kbd
+              key={k}
+              className="rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-[10px] font-medium text-neutral-300"
+            >
+              {k}
+            </kbd>
+          ),
+        )}
+      </span>
+      <span className="leading-snug">{desc}</span>
+    </div>
   );
 }
 
@@ -883,6 +1046,69 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ---------- Status strip --------------------------------------------------
+
+/** Thin horizontal bar between the PageHeader and the 3-column body.
+ *  Owns all the ephemeral status that was previously squeezed into the
+ *  PageHeader actions: analyze progress, saved confirmation, a link back
+ *  to the session-saved board, and the amber/emerald rect legend when
+ *  crop mode is on. Collapses to nothing when there's no signal. */
+function StatusStrip({
+  analyzing,
+  savedFlash,
+  sessionBoardId,
+  savedBoardName,
+  onOpenLibrary,
+  cropMode,
+}: {
+  analyzing: boolean;
+  savedFlash: boolean;
+  sessionBoardId: string | null;
+  savedBoardName: string | null;
+  onOpenLibrary: () => void;
+  cropMode: boolean;
+}) {
+  const showLeft =
+    analyzing || savedFlash || (sessionBoardId && savedBoardName && !savedFlash);
+  const showRight = cropMode;
+  if (!showLeft && !showRight) return null;
+
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-neutral-800 bg-neutral-950/60 px-6 text-[11px] text-neutral-500">
+      <div className="flex min-w-0 items-center gap-2">
+        {analyzing && <Pill tone="neutral">Analyzing…</Pill>}
+        {savedFlash && <Pill tone="success">Saved</Pill>}
+        {sessionBoardId && savedBoardName && !savedFlash && (
+          <button
+            type="button"
+            onClick={onOpenLibrary}
+            className="truncate underline-offset-2 hover:text-neutral-200 hover:underline"
+            title={`Open "${savedBoardName}" in the Library`}
+          >
+            Saved as {savedBoardName}
+          </button>
+        )}
+      </div>
+      {showRight && (
+        <div className="ml-auto flex items-center gap-3">
+          <LegendDot tone="amber" label="calibration" />
+          <LegendDot tone="emerald" label="region" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LegendDot({ tone, label }: { tone: 'amber' | 'emerald'; label: string }) {
+  const dot = tone === 'amber' ? 'bg-amber-400' : 'bg-emerald-400';
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
+      {label}
+    </span>
+  );
+}
+
 // ---------- Center workspace ----------------------------------------------
 
 interface CenterWorkspaceProps {
@@ -890,12 +1116,18 @@ interface CenterWorkspaceProps {
   naturalSize: NaturalSize | null;
   onNaturalSize: (s: NaturalSize) => void;
   onLoadFile: (f: File) => void;
-  onPickImage: (f: File) => void;
-  onClearImage: () => void;
   cropMode: boolean;
   onToggleCropMode: () => void;
   onConfirmCrop: () => void;
   onCancelCrop: () => void;
+  cropSubMode: 'calibrate' | 'regions';
+  setCropSubMode: (m: 'calibrate' | 'regions') => void;
+  onRecalibrate: () => void;
+  calibration: Rect | null;
+  setCalibration: (r: Rect | null) => void;
+  cellSize: number | null;
+  zoom: number;
+  onZoomChange: (z: number) => void;
   rects: Rect[];
   draft: Rect | null;
   allRects: Rect[];
@@ -919,12 +1151,18 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
     naturalSize,
     onNaturalSize,
     onLoadFile,
-    onPickImage,
-    onClearImage,
     cropMode,
     onToggleCropMode,
     onConfirmCrop,
     onCancelCrop,
+    cropSubMode,
+    setCropSubMode,
+    onRecalibrate,
+    calibration,
+    setCalibration,
+    cellSize,
+    zoom,
+    onZoomChange,
     rects,
     draft,
     allRects,
@@ -943,7 +1181,6 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
   } = props;
 
   const [dragOver, setDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -955,7 +1192,7 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
   return (
     <div className="flex min-h-0 flex-col overflow-hidden">
       <div
-        className={`relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-neutral-900/40 p-6 transition ${
+        className={`relative flex min-h-0 flex-1 items-center justify-center overflow-auto bg-neutral-900/40 p-6 transition ${
           dragOver ? 'bg-neutral-800/60 ring-2 ring-inset ring-neutral-500' : ''
         }`}
         onDragOver={(e) => {
@@ -971,6 +1208,9 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
             naturalSize={naturalSize}
             onNaturalSize={onNaturalSize}
             cropMode={cropMode}
+            cropSubMode={cropSubMode}
+            calibration={calibration}
+            setCalibration={setCalibration}
             rects={rects}
             draft={draft}
             allRects={allRects}
@@ -982,37 +1222,74 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
             analyses={analyses}
             brushEnabled={brushEnabled}
             onPaintCell={onPaintCell}
+            zoom={zoom}
           />
         ) : (
           <EmptyState />
         )}
+        {imageUrl && <ZoomOverlay zoom={zoom} onChange={onZoomChange} />}
       </div>
 
       <BottomToolbar
         hasImage={!!imageUrl}
         cropMode={cropMode}
-        onPickImageClick={() => fileInputRef.current?.click()}
-        onClearImage={onClearImage}
+        cropSubMode={cropSubMode}
+        setCropSubMode={setCropSubMode}
+        hasCalibration={!!calibration}
+        hasDraft={!!draft}
+        cellSize={cellSize}
         onToggleCropMode={onToggleCropMode}
         onConfirmCrop={onConfirmCrop}
         onCancelCrop={onCancelCrop}
+        onRecalibrate={onRecalibrate}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={undo}
         onRedo={redo}
       />
+    </div>
+  );
+}
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onPickImage(f);
-          e.target.value = '';
-        }}
-      />
+// ---------- Zoom overlay --------------------------------------------------
+
+/** Floating zoom control pinned to the top-right of the image workspace.
+ *  Discrete ±25% steps between 0.25× and 4×; clicking the percentage
+ *  resets to 100%. */
+function ZoomOverlay({
+  zoom,
+  onChange,
+}: {
+  zoom: number;
+  onChange: (z: number) => void;
+}) {
+  const clamp = (v: number) => Math.min(4, Math.max(0.25, Math.round(v * 100) / 100));
+  return (
+    <div className="absolute right-4 top-4 flex items-center gap-0.5 rounded-md border border-neutral-800 bg-neutral-950/90 p-0.5 shadow-lg backdrop-blur">
+      <button
+        type="button"
+        onClick={() => onChange(clamp(zoom - 0.25))}
+        className="inline-flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
+        title="Zoom out"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(1)}
+        className="inline-flex h-7 min-w-[3.5rem] items-center justify-center rounded px-1 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+        title="Reset zoom to 100%"
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(clamp(zoom + 0.25))}
+        className="inline-flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
+        title="Zoom in"
+      >
+        +
+      </button>
     </div>
   );
 }
@@ -1037,11 +1314,15 @@ function EmptyState() {
 function BottomToolbar({
   hasImage,
   cropMode,
-  onPickImageClick,
-  onClearImage,
+  cropSubMode,
+  setCropSubMode,
+  hasCalibration,
+  hasDraft,
+  cellSize,
   onToggleCropMode,
   onConfirmCrop,
   onCancelCrop,
+  onRecalibrate,
   canUndo,
   canRedo,
   onUndo,
@@ -1049,90 +1330,171 @@ function BottomToolbar({
 }: {
   hasImage: boolean;
   cropMode: boolean;
-  onPickImageClick: () => void;
-  onClearImage: () => void;
+  cropSubMode: 'calibrate' | 'regions';
+  setCropSubMode: (m: 'calibrate' | 'regions') => void;
+  hasCalibration: boolean;
+  hasDraft: boolean;
+  cellSize: number | null;
   onToggleCropMode: () => void;
   onConfirmCrop: () => void;
   onCancelCrop: () => void;
+  onRecalibrate: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
 }) {
+  const helper = (() => {
+    if (!hasImage) return '';
+    if (!cropMode) {
+      return 'Enable Crop mode to calibrate and mark board regions';
+    }
+    if (cropSubMode === 'calibrate') {
+      return 'Drag around a single cell to set the grid pitch';
+    }
+    return 'Drag to add a region • move & resize with handles • right-click deletes';
+  })();
+
+  const canAdvance = cropSubMode === 'calibrate' ? hasDraft || hasCalibration : true;
+  const primaryLabel = cropSubMode === 'calibrate' ? 'Continue' : 'Finish';
+
   return (
     <div className="flex items-center gap-2 border-t border-neutral-800 bg-neutral-950 px-4 py-2.5">
-      <Button size="sm" onClick={onPickImageClick} leading={<ViewfinderIcon />}>
-        Choose image…
-      </Button>
-      <Button
-        size="sm"
-        variant="danger"
-        onClick={onClearImage}
-        disabled={!hasImage}
-        leading={<TrashIcon />}
-      >
-        Remove
-      </Button>
-
-      <div className="mx-2 h-6 w-px bg-neutral-800" />
-
-      <Button
-        size="sm"
-        variant={cropMode ? 'success' : 'secondary'}
-        onClick={onToggleCropMode}
-        disabled={!hasImage}
-        leading={<CropIcon />}
-      >
-        Crop mode
-      </Button>
+      {/* ── Crop group ── */}
+      {!cropMode && (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onToggleCropMode}
+          disabled={!hasImage}
+          leading={<CropIcon />}
+        >
+          Enter crop mode
+        </Button>
+      )}
 
       {cropMode && (
         <>
-          <IconButton
+          <SubModeStepper
+            value={cropSubMode}
+            hasCalibration={hasCalibration}
+            onChange={setCropSubMode}
+          />
+          {cropSubMode === 'regions' && cellSize !== null && (
+            <span
+              className="inline-flex h-7 items-center rounded-md border border-neutral-800 bg-neutral-900 px-2 text-[11px] text-neutral-300"
+              title="Grid pitch locked from calibration"
+            >
+              cell {Math.round(cellSize)}px
+            </span>
+          )}
+          {cropSubMode === 'regions' && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onRecalibrate}
+              title="Clear the calibration cell and redraw it"
+            >
+              Recalibrate
+            </Button>
+          )}
+          <Button
             size="sm"
+            variant="primary"
             onClick={onConfirmCrop}
-            title="Apply (exits crop mode)"
-            className="text-emerald-300 hover:bg-emerald-500/15 hover:text-emerald-200"
+            disabled={!canAdvance}
+            title={
+              cropSubMode === 'calibrate'
+                ? 'Accept this cell and move to regions'
+                : 'Done — exit crop mode'
+            }
           >
-            <CheckIcon />
-          </IconButton>
-          <IconButton
+            {primaryLabel}
+          </Button>
+          <Button
             size="sm"
-            tone="danger"
+            variant="ghost"
             onClick={onCancelCrop}
-            title="Cancel draft (exits crop mode)"
+            title="Exit crop mode (discards any in-progress draft)"
           >
-            <CloseIcon />
-          </IconButton>
+            Exit
+          </Button>
         </>
       )}
 
-      <div className="mx-2 h-6 w-px bg-neutral-800" />
+      <ToolbarDivider />
 
-      <IconButton
-        size="sm"
-        onClick={onUndo}
-        disabled={!canUndo}
-        title="Undo (Ctrl+Z)"
-      >
+      {/* ── History group ── */}
+      <IconButton size="sm" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
         <UndoIcon />
       </IconButton>
-      <IconButton
-        size="sm"
-        onClick={onRedo}
-        disabled={!canRedo}
-        title="Redo (Ctrl+Y)"
-      >
+      <IconButton size="sm" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y)">
         <RedoIcon />
       </IconButton>
 
-      <div className="ml-auto text-[11px] text-neutral-500">
-        {cropMode
-          ? 'Drag to add a rectangle • inside to move • handles to resize • trash to delete'
-          : hasImage
-          ? 'Enable Crop mode to edit selections • paint cells with the brush on the right'
-          : ''}
-      </div>
+      <div className="ml-auto truncate text-[11px] text-neutral-500">{helper}</div>
+    </div>
+  );
+}
+
+function ToolbarDivider() {
+  return <div className="mx-1 h-6 w-px bg-neutral-800" aria-hidden />;
+}
+
+/** 2-step segmented control for the calibrate → regions flow. Uses the
+ *  same visual language as `Tabs` in ui.tsx but without the full-width
+ *  bottom border, so it drops cleanly into the middle of a toolbar row.
+ *  Step 2 is disabled until a calibration rect exists. */
+function SubModeStepper({
+  value,
+  hasCalibration,
+  onChange,
+}: {
+  value: 'calibrate' | 'regions';
+  hasCalibration: boolean;
+  onChange: (v: 'calibrate' | 'regions') => void;
+}) {
+  const Step = ({
+    id,
+    n,
+    label,
+    disabled,
+  }: {
+    id: 'calibrate' | 'regions';
+    n: number;
+    label: string;
+    disabled?: boolean;
+  }) => {
+    const active = value === id;
+    return (
+      <button
+        type="button"
+        onClick={() => !disabled && onChange(id)}
+        disabled={disabled}
+        className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+          active
+            ? 'bg-neutral-800 text-neutral-50'
+            : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100'
+        }`}
+      >
+        <span
+          className={`inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] ${
+            active
+              ? 'border-neutral-400 bg-neutral-950 text-neutral-100'
+              : 'border-neutral-700 bg-neutral-900 text-neutral-500'
+          }`}
+        >
+          {n}
+        </span>
+        {label}
+      </button>
+    );
+  };
+
+  return (
+    <div className="inline-flex items-center gap-0.5 rounded-md border border-neutral-800 bg-neutral-950 p-0.5">
+      <Step id="calibrate" n={1} label="Calibrate" />
+      <Step id="regions" n={2} label="Regions" disabled={!hasCalibration} />
     </div>
   );
 }
@@ -1144,6 +1506,9 @@ interface ImageSurfaceProps {
   naturalSize: NaturalSize | null;
   onNaturalSize: (s: NaturalSize) => void;
   cropMode: boolean;
+  cropSubMode: 'calibrate' | 'regions';
+  calibration: Rect | null;
+  setCalibration: (r: Rect | null) => void;
   rects: Rect[];
   draft: Rect | null;
   allRects: Rect[];
@@ -1155,6 +1520,7 @@ interface ImageSurfaceProps {
   analyses: AnalysisResult[];
   brushEnabled: boolean;
   onPaintCell: (groupId: string, row: number, col: number) => void;
+  zoom: number;
 }
 
 function ImageSurface(props: ImageSurfaceProps) {
@@ -1163,6 +1529,9 @@ function ImageSurface(props: ImageSurfaceProps) {
     naturalSize,
     onNaturalSize,
     cropMode,
+    cropSubMode,
+    calibration,
+    setCalibration,
     rects,
     draft,
     allRects,
@@ -1174,6 +1543,7 @@ function ImageSurface(props: ImageSurfaceProps) {
     analyses,
     brushEnabled,
     onPaintCell,
+    zoom,
   } = props;
 
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -1220,13 +1590,71 @@ function ImageSurface(props: ImageSurfaceProps) {
     if (!p) return;
 
     if (cropMode) {
-      // Hit test newest → oldest so the topmost rect wins.
+      // Right-click in regions sub-mode deletes the region under the
+      // pointer. No equivalent for calibration (single rect, trivially
+      // redrawn by dragging over).
+      if (e.button === 2 && cropSubMode === 'regions') {
+        for (let i = rects.length - 1; i >= 0; i--) {
+          if (hitBody(p, rects[i]!)) {
+            deleteRect(rects[i]!.id);
+            e.preventDefault();
+            return;
+          }
+        }
+        return;
+      }
+      if (e.button !== 0) return;
+
+      if (cropSubMode === 'calibrate') {
+        // Edit an existing calibration rect or draw a new one.
+        if (calibration) {
+          const h = hitHandle(p, calibration);
+          if (h) {
+            dragRef.current = {
+              kind: 'resize',
+              target: 'calibration',
+              id: calibration.id,
+              handle: h,
+              origin: calibration,
+            };
+            (e.currentTarget as Element).setPointerCapture(e.pointerId);
+            e.preventDefault();
+            return;
+          }
+          if (hitBody(p, calibration)) {
+            dragRef.current = {
+              kind: 'move',
+              target: 'calibration',
+              id: calibration.id,
+              offsetX: p.x - calibration.x,
+              offsetY: p.y - calibration.y,
+            };
+            (e.currentTarget as Element).setPointerCapture(e.pointerId);
+            e.preventDefault();
+            return;
+          }
+        }
+        const id = `cal-${Date.now().toString(36)}`;
+        dragRef.current = {
+          kind: 'draw',
+          target: 'calibration',
+          anchorX: p.x,
+          anchorY: p.y,
+          id,
+        };
+        setDraft({ id, x: p.x, y: p.y, w: 0, h: 0 });
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        e.preventDefault();
+        return;
+      }
+
+      // regions sub-mode
       for (let i = rects.length - 1; i >= 0; i--) {
         const r = rects[i]!;
         const h = hitHandle(p, r);
         if (h) {
           dragStartRectsRef.current = rects;
-          dragRef.current = { kind: 'resize', id: r.id, handle: h, origin: r };
+          dragRef.current = { kind: 'resize', target: 'region', id: r.id, handle: h, origin: r };
           (e.currentTarget as Element).setPointerCapture(e.pointerId);
           e.preventDefault();
           return;
@@ -1235,6 +1663,7 @@ function ImageSurface(props: ImageSurfaceProps) {
           dragStartRectsRef.current = rects;
           dragRef.current = {
             kind: 'move',
+            target: 'region',
             id: r.id,
             offsetX: p.x - r.x,
             offsetY: p.y - r.y,
@@ -1244,9 +1673,8 @@ function ImageSurface(props: ImageSurfaceProps) {
           return;
         }
       }
-
       const id = `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      dragRef.current = { kind: 'draw', anchorX: p.x, anchorY: p.y, id };
+      dragRef.current = { kind: 'draw', target: 'region', anchorX: p.x, anchorY: p.y, id };
       setDraft({ id, x: p.x, y: p.y, w: 0, h: 0 });
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
       e.preventDefault();
@@ -1256,7 +1684,7 @@ function ImageSurface(props: ImageSurfaceProps) {
     // Non-crop mode: if brush is enabled, a pointer-down on a cell paints
     // it. The click must land inside the actual rect union of a group
     // (not just its bounding box) so masked-dark cells don't get painted.
-    if (brushEnabled) {
+    if (e.button === 0 && brushEnabled) {
       for (const a of analyses) {
         const group = groups.find((g) => g.id === a.rectId);
         if (!group) continue;
@@ -1285,8 +1713,27 @@ function ImageSurface(props: ImageSurfaceProps) {
       const fw = Math.min(w, naturalSize.w - fx);
       const fh = Math.min(h, naturalSize.h - fy);
       setDraft({ id: drag.id, x: fx, y: fy, w: fw, h: fh });
-    } else if (drag.kind === 'move') {
-      const start = dragStartRectsRef.current ?? rects;
+      return;
+    }
+
+    if (drag.target === 'calibration') {
+      if (!calibration) return;
+      if (drag.kind === 'move') {
+        const nx = p.x - drag.offsetX;
+        const ny = p.y - drag.offsetY;
+        setCalibration(
+          clampRectInside({ id: calibration.id, x: nx, y: ny, w: calibration.w, h: calibration.h }, naturalSize),
+        );
+      } else {
+        const next = resizeRect(drag.origin, drag.handle, p);
+        setCalibration(clampRectInside(next, naturalSize));
+      }
+      return;
+    }
+
+    // region move/resize
+    const start = dragStartRectsRef.current ?? rects;
+    if (drag.kind === 'move') {
       const sq = start.find((s) => s.id === drag.id);
       if (!sq) return;
       const nx = p.x - drag.offsetX;
@@ -1296,8 +1743,7 @@ function ImageSurface(props: ImageSurfaceProps) {
         naturalSize,
       );
       replaceRects(start.map((s) => (s.id === sq.id ? clamped : s)));
-    } else if (drag.kind === 'resize') {
-      const start = dragStartRectsRef.current ?? rects;
+    } else {
       const next = resizeRect(drag.origin, drag.handle, p);
       const clamped = clampRectInside(next, naturalSize);
       replaceRects(start.map((s) => (s.id === drag.id ? clamped : s)));
@@ -1312,13 +1758,23 @@ function ImageSurface(props: ImageSurfaceProps) {
 
     if (drag.kind === 'draw') {
       if (draft && draft.w >= MIN_RECT_SIZE && draft.h >= MIN_RECT_SIZE) {
-        commitRects([...rects, draft]);
+        if (drag.target === 'calibration') {
+          setCalibration({ id: draft.id, x: draft.x, y: draft.y, w: draft.w, h: draft.h });
+        } else {
+          commitRects([...rects, draft]);
+        }
       }
       setDraft(null);
-    } else {
+      dragStartRectsRef.current = null;
+      return;
+    }
+
+    if (drag.target === 'region') {
       const before = dragStartRectsRef.current;
       if (before && before !== rects) commitRects(rects);
     }
+    // Calibration move/resize: setCalibration already stored the new value
+    // live during onPointerMove; nothing to commit.
     dragStartRectsRef.current = null;
   };
 
@@ -1331,6 +1787,16 @@ function ImageSurface(props: ImageSurfaceProps) {
       return;
     }
     if (cropMode) {
+      if (cropSubMode === 'calibrate') {
+        if (calibration) {
+          const h = hitHandle(p, calibration);
+          if (h) return setHoverCursor(handleToCursor(h));
+          if (hitBody(p, calibration)) return setHoverCursor('move');
+        }
+        setHoverCursor('crosshair');
+        return;
+      }
+      // regions
       for (let i = rects.length - 1; i >= 0; i--) {
         const r = rects[i]!;
         const h = hitHandle(p, r);
@@ -1349,8 +1815,11 @@ function ImageSurface(props: ImageSurfaceProps) {
   };
 
   return (
-    <div className="relative flex max-h-full max-w-full items-center justify-center">
-      <div className="relative inline-block max-h-full max-w-full">
+    <div className="relative flex items-center justify-center">
+      <div
+        className="relative inline-block origin-top-left"
+        style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+      >
         <img
           ref={imgRef}
           src={imageUrl}
@@ -1499,7 +1968,9 @@ function ImageSurface(props: ImageSurfaceProps) {
           </svg>
         )}
 
-        {/* Pointer capture surface */}
+        {/* Pointer capture surface. `onContextMenu` is suppressed so a
+            right-click used to delete a region doesn't also open the
+            browser's native menu. */}
         <div
           className="absolute inset-0 touch-none"
           style={{ cursor: hoverCursor }}
@@ -1510,30 +1981,49 @@ function ImageSurface(props: ImageSurfaceProps) {
           }}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
+          onContextMenu={(e) => e.preventDefault()}
         />
 
-        {/* Rect overlays (borders + handles + trash gizmo) */}
+        {/* Region rect overlays (borders + handles, no trash gizmo —
+            right-click on the region deletes it in regions sub-mode). */}
         {naturalSize &&
           allRects.map((r) => {
-            // Each group's label attaches to its first rect (the "lead"),
-            // so overlapping rects don't render duplicate labels for the
-            // same group.
             const group = groups.find((g) => g.rects.some((gr) => gr.id === r.id));
             const isLead = group?.rects[0]?.id === r.id;
             const analysis =
               isLead && group ? analyses.find((a) => a.rectId === group.id) ?? null : null;
+            const isRegionDraft =
+              r.id === draft?.id && dragRef.current?.target === 'region';
+            const regionsEditable = cropMode && cropSubMode === 'regions';
             return (
               <RectOverlay
                 key={r.id}
                 rect={r}
                 naturalSize={naturalSize}
-                cropMode={cropMode}
-                isDraft={r.id === draft?.id}
-                onDelete={() => deleteRect(r.id)}
+                editable={regionsEditable}
+                isDraft={isRegionDraft}
                 analysis={analysis}
               />
             );
           })}
+
+        {/* Calibration rect — amber, single, always visible in crop
+            mode. Editable only in the calibrate sub-mode; in regions
+            sub-mode it stays on-screen as a visual reminder of where the
+            grid pitch came from. Also renders the in-progress draft when
+            the user is drawing a new calibration. */}
+        {naturalSize && cropMode && (calibration || (cropSubMode === 'calibrate' && draft)) && (
+          <CalibrationOverlay
+            rect={
+              cropSubMode === 'calibrate' && draft && dragRef.current?.target === 'calibration'
+                ? draft
+                : calibration!
+            }
+            naturalSize={naturalSize}
+            editable={cropSubMode === 'calibrate'}
+            isDraft={cropSubMode === 'calibrate' && dragRef.current?.target === 'calibration'}
+          />
+        )}
       </div>
     </div>
   );
@@ -1559,16 +2049,14 @@ function handleToCursor(h: Handle): string {
 function RectOverlay({
   rect,
   naturalSize,
-  cropMode,
+  editable,
   isDraft,
-  onDelete,
   analysis,
 }: {
   rect: Rect;
   naturalSize: NaturalSize;
-  cropMode: boolean;
+  editable: boolean;
   isDraft: boolean;
-  onDelete: () => void;
   analysis: AnalysisResult | null;
 }) {
   const style: React.CSSProperties = {
@@ -1580,7 +2068,7 @@ function RectOverlay({
 
   const borderColor = isDraft
     ? 'border-emerald-300'
-    : cropMode
+    : editable
     ? 'border-emerald-400'
     : 'border-emerald-400/60';
 
@@ -1591,36 +2079,50 @@ function RectOverlay({
       }`}
       style={style}
     >
-      {/* Size / grid label — top-left of rect */}
       {!isDraft && analysis && (
         <span className="pointer-events-none absolute left-0 top-0 -translate-y-full rounded-t-sm bg-neutral-950/80 px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
           {analysis.cols} × {analysis.rows}
         </span>
       )}
-
-      {cropMode && !isDraft && (
-        <>
-          {/* Center trash gizmo. pointer-events-auto so the button receives
-              the click; the capture surface below doesn't see it. */}
-          <button
-            type="button"
-            onClick={onDelete}
-            onPointerDown={(e) => e.stopPropagation()}
-            title="Delete this selection"
-            className="pointer-events-auto absolute left-1/2 top-1/2 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-neutral-950/90 text-rose-300 ring-2 ring-rose-400/50 shadow transition hover:bg-rose-500/30 hover:text-rose-100"
-          >
-            <TrashIcon />
-          </button>
-          {ALL_HANDLES.map((h) => (
-            <HandleKnob key={h} handle={h} />
-          ))}
-        </>
-      )}
+      {editable && !isDraft && ALL_HANDLES.map((h) => <HandleKnob key={h} handle={h} tone="emerald" />)}
     </div>
   );
 }
 
-function HandleKnob({ handle }: { handle: Handle }) {
+function CalibrationOverlay({
+  rect,
+  naturalSize,
+  editable,
+  isDraft,
+}: {
+  rect: Rect;
+  naturalSize: NaturalSize;
+  editable: boolean;
+  isDraft: boolean;
+}) {
+  const style: React.CSSProperties = {
+    left: `${(rect.x / naturalSize.w) * 100}%`,
+    top: `${(rect.y / naturalSize.h) * 100}%`,
+    width: `${(rect.w / naturalSize.w) * 100}%`,
+    height: `${(rect.h / naturalSize.h) * 100}%`,
+  };
+  const border = isDraft ? 'border-amber-300' : editable ? 'border-amber-400' : 'border-amber-400/50';
+  return (
+    <div
+      className={`pointer-events-none absolute border-2 border-dashed ${border} ${
+        isDraft ? 'bg-amber-400/10' : editable ? 'bg-amber-400/5' : ''
+      }`}
+      style={style}
+    >
+      <span className="pointer-events-none absolute left-0 top-0 -translate-y-full rounded-t-sm bg-neutral-950/80 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">
+        cell
+      </span>
+      {editable && !isDraft && ALL_HANDLES.map((h) => <HandleKnob key={h} handle={h} tone="amber" />)}
+    </div>
+  );
+}
+
+function HandleKnob({ handle, tone = 'emerald' }: { handle: Handle; tone?: 'emerald' | 'amber' }) {
   const pos = (() => {
     switch (handle) {
       case 'nw': return 'left-0 top-0 -translate-x-1/2 -translate-y-1/2';
@@ -1633,9 +2135,10 @@ function HandleKnob({ handle }: { handle: Handle }) {
       case 'w':  return 'left-0 top-1/2 -translate-x-1/2 -translate-y-1/2';
     }
   })();
+  const toneClass = tone === 'amber' ? 'border-amber-300' : 'border-emerald-300';
   return (
     <span
-      className={`pointer-events-none absolute h-3 w-3 border-2 border-emerald-300 bg-neutral-950 ${pos}`}
+      className={`pointer-events-none absolute h-3 w-3 border-2 ${toneClass} bg-neutral-950 ${pos}`}
     />
   );
 }
@@ -1664,59 +2167,57 @@ function BrushPanel({
       <Section title="Retouch brush">
         <p className="text-[11px] leading-snug text-neutral-500">
           {enabled
-            ? 'Click a cell on the image to set its color.'
+            ? 'Click a cell on the image to set it to the active brush.'
             : 'Draw a selection to start analyzing. The brush turns on once the detector has something to fix.'}
         </p>
-        <div className={`grid grid-cols-4 gap-2 ${enabled ? '' : 'opacity-50'}`}>
-          {PIECES.map((p) => {
-            const active = enabled && brush === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                disabled={!enabled}
-                onClick={() => onBrushChange(p.id as PieceColor)}
-                className={`flex h-10 items-center justify-center rounded-md border transition disabled:cursor-not-allowed ${
-                  active
-                    ? 'border-neutral-100 ring-2 ring-neutral-100'
-                    : 'border-neutral-800 hover:border-neutral-600'
-                }`}
-                style={{ backgroundColor: p.hex }}
-                title={p.label}
-              />
-            );
-          })}
-          <button
-            type="button"
+        <div className={`flex flex-col gap-1 ${enabled ? '' : 'opacity-50'}`}>
+          {PIECES.map((p) => (
+            <BrushRow
+              key={p.id}
+              selected={enabled && brush === p.id}
+              disabled={!enabled}
+              onClick={() => onBrushChange(p.id as PieceColor)}
+              label={p.label}
+              swatch={
+                <span
+                  className="inline-block h-4 w-4 rounded-sm"
+                  style={{ backgroundColor: p.hex }}
+                  aria-hidden
+                />
+              }
+            />
+          ))}
+          <BrushRow
+            selected={enabled && brush === 'gap'}
             disabled={!enabled}
             onClick={() => onBrushChange('gap')}
-            className={`col-span-2 flex h-10 items-center justify-center gap-1.5 rounded-md border text-xs text-neutral-300 transition disabled:cursor-not-allowed ${
-              enabled && brush === 'gap'
-                ? 'border-neutral-100 ring-2 ring-neutral-100'
-                : 'border-neutral-800 hover:border-neutral-600'
-            }`}
-            style={{
-              backgroundImage:
-                'repeating-linear-gradient(45deg, rgb(23 23 23) 0 4px, rgb(38 38 38) 4px 8px)',
-            }}
-            title="Gap — mark a cell as a structural hole (no tile will ever go there)"
-          >
-            Gap
-          </button>
-          <button
-            type="button"
+            label="Gap"
+            title="Mark a cell as a structural hole (no tile ever goes there)"
+            swatch={
+              <span
+                className="inline-block h-4 w-4 rounded-sm border border-neutral-600"
+                style={{
+                  backgroundImage:
+                    'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
+                }}
+                aria-hidden
+              />
+            }
+          />
+          <BrushRow
+            selected={enabled && brush === 'eraser'}
             disabled={!enabled}
             onClick={() => onBrushChange('eraser')}
-            className={`col-span-2 flex h-10 items-center justify-center gap-1.5 rounded-md border text-xs text-neutral-300 transition disabled:cursor-not-allowed ${
-              enabled && brush === 'eraser'
-                ? 'border-neutral-100 ring-2 ring-neutral-100'
-                : 'border-neutral-800 hover:border-neutral-600'
-            }`}
-            title="Eraser"
-          >
-            <EraserIcon />
-            Eraser
-          </button>
+            label="Eraser"
+            swatch={
+              <span
+                className="inline-flex h-4 w-4 items-center justify-center rounded-sm border border-dashed border-neutral-500 bg-neutral-950 text-neutral-400"
+                aria-hidden
+              >
+                <EraserIcon className="h-3 w-3" />
+              </span>
+            }
+          />
         </div>
       </Section>
 
@@ -1742,14 +2243,58 @@ function BrushPanel({
         </Section>
       )}
 
-      <Section title="Status">
-        <div className="rounded-md border border-neutral-800 bg-neutral-900/40 p-3 text-[11px] leading-snug text-neutral-500">
-          <BrushIcon className="mb-1 inline h-3.5 w-3.5 text-neutral-500" />{' '}
-          Analysis is best-effort: dominant hue per cell center. Retouch in
-          this panel if any cell comes back wrong, then save from the top
-          right.
-        </div>
+      <Section title="About analysis">
+        <p className="text-[11px] leading-snug text-neutral-500">
+          <BrushIcon className="mb-0.5 mr-1 inline h-3.5 w-3.5 text-neutral-500" />
+          Analysis is best-effort: dominant hue per cell center. Retouch any
+          miss here, then save from the top right.
+        </p>
       </Section>
     </aside>
+  );
+}
+
+/** Row-style brush button matching the Board Generator convention: swatch
+ *  on the left, label, optional hotkey pill on the right. Selected rows
+ *  get the elevated `bg-neutral-800` treatment like the sidebar panels. */
+function BrushRow({
+  selected,
+  disabled,
+  onClick,
+  swatch,
+  label,
+  hotkey,
+  title,
+}: {
+  selected: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  swatch: React.ReactNode;
+  label: string;
+  hotkey?: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? label}
+      className={`flex h-9 items-center justify-between gap-2 rounded-md border px-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed ${
+        selected
+          ? 'border-neutral-500 bg-neutral-800 text-neutral-50'
+          : 'border-neutral-800 bg-neutral-950 text-neutral-200 hover:border-neutral-700'
+      }`}
+    >
+      <span className="flex items-center gap-2.5">
+        {swatch}
+        <span>{label}</span>
+      </span>
+      {hotkey && (
+        <kbd className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
+          {hotkey}
+        </kbd>
+      )}
+    </button>
   );
 }

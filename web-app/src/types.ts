@@ -14,6 +14,11 @@ export interface Board {
   layout: Cell[][];         // [row][col]
   createdAt: number;
   updatedAt: number;
+  /** Data-URL thumbnail of the original screenshot that produced this
+   *  board. Only set when the board came from the Analyzer; hand-painted
+   *  boards leave it undefined. Used to give Library cards a visual
+   *  reference of where the layout originated. */
+  sourceImage?: string;
 }
 
 export const DEFAULT_BOARD_WIDTH = 12;
