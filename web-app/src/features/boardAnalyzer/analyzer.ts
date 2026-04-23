@@ -62,70 +62,6 @@ async function getImageData(url: string): Promise<ImageData | null> {
   return data;
 }
 
-// ---------- Grid detection via autocorrelation ------------------------------
-
-/** Given a 1D luminance profile along one axis of the cropped board, pick
- *  the cell count that best explains its periodicity.
- *
- *  For each candidate N we compute the MEAN autocorrelation across every
- *  multiple of the implied lag (L/N, 2L/N, 3L/N, …). A harmonic of the
- *  fundamental — e.g. detecting 6 when the truth is 3 — has more multiples
- *  to average, and half of those multiples land at non-tile positions
- *  (mid-tile highlights, mid-tile shadows). Averaging drags a harmonic's
- *  score down relative to the true fundamental.
- *
- *  We then apply one more bias: the smallest N whose score is within
- *  85% of the best wins. This flips ties in favor of the fundamental when
- *  harmonics happen to score close due to strong within-tile texture
- *  (common on glossy match-3 tile art with highlight + shadow). */
-function detectCellCount(
-  profile: number[],
-  minCells: number,
-  maxCells: number,
-): number {
-  const n = profile.length;
-  if (n < minCells * 4) return minCells;
-
-  const mean = profile.reduce((a, b) => a + b, 0) / n;
-  const centered = profile.map((v) => v - mean);
-  const variance = centered.reduce((a, b) => a + b * b, 0);
-  if (variance < 1e-3) return minCells;
-
-  const scores: number[] = [];
-  for (let N = minCells; N <= maxCells; N++) {
-    const lag = Math.round(n / N);
-    if (lag < 4) {
-      scores.push(-Infinity);
-      continue;
-    }
-    let total = 0;
-    let peaks = 0;
-    for (let k = 1; k * lag < n; k++) {
-      const shift = k * lag;
-      let corr = 0;
-      let count = 0;
-      for (let i = 0; i + shift < n; i++) {
-        corr += centered[i]! * centered[i + shift]!;
-        count++;
-      }
-      if (count > 0) {
-        total += corr / count;
-        peaks++;
-      }
-    }
-    scores.push(peaks > 0 ? total / peaks : -Infinity);
-  }
-
-  let maxScore = -Infinity;
-  for (const s of scores) if (s > maxScore) maxScore = s;
-  if (maxScore <= 0) return minCells;
-  const threshold = 0.85 * maxScore;
-  for (let i = 0; i < scores.length; i++) {
-    if (scores[i]! >= threshold) return minCells + i;
-  }
-  return minCells;
-}
-
 // ---------- Hue-based classification ----------------------------------------
 
 function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
@@ -218,15 +154,19 @@ function classifyCell(
 
 // ---------- Entry point ----------------------------------------------------
 
-const MIN_CELLS = 3;
-const MAX_CELLS = 20;
-
+/** Analyze each region using an explicit cell size taken from the user's
+ *  calibration rect. Grids are 1:1 square cells, so a single scalar
+ *  determines both rows and cols per region. This replaces the previous
+ *  autocorrelation heuristic — the user tells us the tile pitch directly,
+ *  which eliminates the whole class of harmonic-detection bugs. */
 export async function analyzeImage(
   imageUrl: string,
   rects: Rect[],
+  cellSize: number,
 ): Promise<AnalysisResult[]> {
   const img = await getImageData(imageUrl);
   if (!img) return [];
+  if (!(cellSize > 1)) return [];
 
   const results: AnalysisResult[] = [];
 
@@ -235,33 +175,14 @@ export async function analyzeImage(
     const ry = Math.max(0, Math.floor(rect.y));
     const rw = Math.min(img.width - rx, Math.floor(rect.w));
     const rh = Math.min(img.height - ry, Math.floor(rect.h));
-    // Below this size autocorrelation has nothing to latch onto.
-    if (rw < 12 || rh < 12) continue;
+    if (rw < cellSize * 0.5 || rh < cellSize * 0.5) continue;
 
-    // Luminance profile per row / per column.
-    const rowProfile = new Array<number>(rh);
-    const colProfile = new Array<number>(rw).fill(0);
+    const cols = Math.max(1, Math.round(rw / cellSize));
+    const rows = Math.max(1, Math.round(rh / cellSize));
 
-    for (let y = 0; y < rh; y++) {
-      let rowSum = 0;
-      for (let x = 0; x < rw; x++) {
-        const idx = ((ry + y) * img.width + (rx + x)) * 4;
-        const r = img.data[idx]!;
-        const g = img.data[idx + 1]!;
-        const b = img.data[idx + 2]!;
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-        rowSum += lum;
-        colProfile[x] = colProfile[x]! + lum;
-      }
-      rowProfile[y] = rowSum / rw;
-    }
-    for (let x = 0; x < rw; x++) colProfile[x] = colProfile[x]! / rh;
-
-    const maxRows = Math.min(MAX_CELLS, Math.floor(rh / 6));
-    const maxCols = Math.min(MAX_CELLS, Math.floor(rw / 6));
-    const rows = detectCellCount(rowProfile, MIN_CELLS, Math.max(MIN_CELLS, maxRows));
-    const cols = detectCellCount(colProfile, MIN_CELLS, Math.max(MIN_CELLS, maxCols));
-
+    // Use the region's exact dimensions to derive per-axis cell size so
+    // rounding slop (cols * cellSize != rw exactly) doesn't accumulate
+    // into misaligned sampling.
     const cellW = rw / cols;
     const cellH = rh / rows;
 

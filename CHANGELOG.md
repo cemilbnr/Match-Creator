@@ -6,6 +6,48 @@ Format is loosely based on [Keep a Changelog](https://keepachangelog.com/) and
 the project follows semantic versioning once it hits 1.0. Pre-1.0 releases are
 beta and may ship breaking changes between minor bumps.
 
+## [0.3.1-beta] — 2026-04-24
+
+### Added
+- **Board Analyzer — mandatory calibration step.** Crop mode now opens into
+  a `Calibrate` sub-mode where the user draws a single reference cell
+  (amber, dashed). The edge length locks the grid pitch and every region
+  analysis from that point on divides the bounding box arithmetically.
+  Autocorrelation and its harmonic-detection heuristic are gone — no
+  more "3×3 reads as 6×6" surprises.
+- Board Analyzer zoom overlay — top-right floating control for −25/100/+25
+  stepping between 0.25× and 4×. Workspace scrolls when the image
+  overflows.
+- Board Analyzer Save now composes multi-region layouts into one board:
+  every rect's envelope becomes the canvas and cells outside the
+  selections become structural `'gap'` cells automatically.
+- Board Library cards show a small reference thumbnail in the bottom-right
+  corner for boards saved from the Analyzer. A `from screenshot` pill
+  next to the size tag flags the source. Thumbnail is a JPEG data URL
+  generated on image load, stored with the Board.
+
+### Changed
+- Board Generator brush panel reorganized into `Brushes` /
+  `Quick actions` / `Shortcuts` frames. `Clear canvas` moves off the
+  right-side preferences panel and joins `Fill empty` under Quick
+  actions.
+- Board Analyzer left panel restructured into `Source` /
+  `Onboarding` / `Shortcuts` frames. `Choose image…` and `Remove` leave
+  the bottom toolbar and live in Source. Onboarding steps lose their
+  descriptive sub-text (just titles). Shortcuts match the Generator's
+  framed pattern.
+- Board Analyzer PageHeader actions slimmed to just Save / Save as.
+  `Analyzing`/`Saved` pills and the linked saved-board name move to a
+  new thin status strip between the header and the body. Legend chips
+  (`● calibration`, `● region`) appear there while crop mode is on.
+- Bottom toolbar uses a named 2-step stepper (`① Calibrate | ② Regions`)
+  and explicit primary buttons (`Continue` / `Finish`) instead of
+  ambiguous ✓/× icons. × is now a secondary `Exit` button.
+- Right panel brush in Analyzer normalized to the Generator's vertical
+  `BrushRow` convention (swatch + label + optional hotkey).
+- Board Library cards have a fixed height so small (3×3) and large
+  (12×12) boards don't produce uneven rows.
+
 ## [0.3.0-beta] — 2026-04-23
 
 ### Added

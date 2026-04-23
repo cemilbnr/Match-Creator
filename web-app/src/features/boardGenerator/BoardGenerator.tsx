@@ -298,6 +298,7 @@ export function BoardGenerator() {
             shiftHeld={shiftHeld}
             onSelect={setBrush}
             onFillEmpty={fillEmpty}
+            onClear={onClear}
           />
         </aside>
 
@@ -328,7 +329,6 @@ export function BoardGenerator() {
             onNameChange={setName}
             onWidthChange={updateWidth}
             onHeightChange={updateHeight}
-            onClear={onClear}
             tileSet={tileSet}
           />
         </aside>

@@ -129,7 +129,9 @@ function BoardCard({
 }) {
   const updated = new Date(board.updatedAt);
   return (
-    <article className="group flex flex-col gap-3 rounded-lg border border-neutral-800 bg-neutral-925 p-4 transition hover:border-neutral-700">
+    // Fixed card height keeps the grid tidy when mixing tiny (3×3) and
+    // large (12×12) boards — the thumbnail area absorbs the variance.
+    <article className="group flex h-[320px] flex-col gap-3 rounded-lg border border-neutral-800 bg-neutral-925 p-4 transition hover:border-neutral-700">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-neutral-50">
@@ -137,6 +139,11 @@ function BoardCard({
           </div>
           <div className="text-[11px] text-neutral-500">
             {board.width} × {board.height} · {formatDate(updated)}
+            {board.sourceImage && (
+              <span className="ml-1.5 rounded border border-amber-600/40 bg-amber-500/10 px-1 py-0.5 text-[10px] text-amber-300">
+                from screenshot
+              </span>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
@@ -152,13 +159,24 @@ function BoardCard({
       <button
         type="button"
         onClick={onOpenGenerator}
-        className="flex items-center justify-center rounded-md border border-neutral-800 bg-neutral-950 p-3 transition hover:border-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+        className="relative flex flex-1 items-center justify-center overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 p-3 transition hover:border-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
       >
         <BoardThumbnail
           width={board.width}
           height={board.height}
           layout={board.layout}
         />
+        {board.sourceImage && (
+          // Side-by-side reference for Analyzer-sourced boards. Pinned
+          // to the bottom-right so it can't push the grid off-center on
+          // small boards.
+          <img
+            src={board.sourceImage}
+            alt="Source screenshot"
+            title="Source screenshot"
+            className="pointer-events-none absolute bottom-2 right-2 h-16 w-16 rounded border border-neutral-800 bg-neutral-900 object-cover shadow-md"
+          />
+        )}
       </button>
 
       <div className="flex items-center gap-2">

@@ -1,5 +1,4 @@
-import { Button, Field, Input, Section } from '../../components/ui';
-import { EraserIcon } from '../../components/icons';
+import { Field, Input, Section } from '../../components/ui';
 import type { Board } from '../../types';
 import { MAX_BOARD_SIDE, MIN_BOARD_SIDE } from '../../types';
 
@@ -14,7 +13,6 @@ interface Props {
   onNameChange: (v: string) => void;
   onWidthChange: (v: number) => void;
   onHeightChange: (v: number) => void;
-  onClear: () => void;
 
   tileSet: string;
 }
@@ -39,16 +37,6 @@ export function BoardPreferences(props: Props) {
             <LabeledNumber label="H" value={props.height} onChange={props.onHeightChange} />
           </div>
         </Field>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          leading={<EraserIcon />}
-          onClick={props.onClear}
-          className="self-start"
-        >
-          Clear canvas
-        </Button>
       </Section>
 
       <Section title="Load existing">
