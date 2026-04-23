@@ -9,7 +9,7 @@ import {
   UndoIcon,
   ViewfinderIcon,
 } from '../../components/icons';
-import { Button, Field, IconButton, PageHeader, Pill, Section } from '../../components/ui';
+import { Button, Field, IconButton, Kbd, PageHeader, Pill, Section } from '../../components/ui';
 import type { Board, Cell, PieceColor } from '../../types';
 import { PIECES, PIECE_BY_ID } from '../../data/pieceTypes';
 import { useLibrary } from '../../store/libraryStore';
@@ -951,41 +951,26 @@ function LeftPanel({
 
   return (
     <aside className="flex flex-col gap-5 border-r border-neutral-800 bg-neutral-950 p-4">
-      <Section title="Source">
-        <div className="flex flex-col gap-1">
-          <button
-            type="button"
-            onClick={onPickImageClick}
-            className="flex h-9 items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 text-sm font-medium text-neutral-200 transition hover:border-neutral-600 hover:bg-neutral-900"
-          >
-            <span className="flex items-center gap-2.5">
-              <ViewfinderIcon />
-              <span>Choose image…</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={onClearImage}
-            disabled={!hasImage}
-            className="flex h-9 items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 text-sm font-medium text-neutral-200 transition hover:border-rose-600/60 hover:bg-rose-500/10 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <span className="flex items-center gap-2.5">
-              <TrashIcon className="text-neutral-400" />
-              <span>Remove</span>
-            </span>
-          </button>
-        </div>
+      <Section variant="framed" title="Source">
+        <SidebarActionButton onClick={onPickImageClick} icon={<ViewfinderIcon />} label="Choose image…" />
+        <SidebarActionButton
+          onClick={onClearImage}
+          disabled={!hasImage}
+          icon={<TrashIcon className="text-neutral-400" />}
+          label="Remove"
+          tone="danger"
+        />
       </Section>
 
-      <Section title="Onboarding">
-        <ol className="flex flex-col gap-1.5">
+      <Section variant="framed" title="Onboarding">
+        <ol className="flex flex-col gap-0.5 p-1">
           {steps.map((s, i) => (
-            <li key={i} className="flex items-center gap-2.5">
+            <li key={i} className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
               <span
-                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
                   s.done
-                    ? 'border-emerald-500/60 bg-emerald-500/20 text-emerald-200'
-                    : 'border-neutral-700 bg-neutral-900 text-neutral-400'
+                    ? 'bg-emerald-500/25 text-emerald-200'
+                    : 'bg-white/5 text-neutral-400'
                 }`}
               >
                 {s.done ? <CheckIcon className="h-3 w-3" /> : i + 1}
@@ -1000,51 +985,67 @@ function LeftPanel({
         </ol>
       </Section>
 
-      <Section title="Shortcuts">
-        <div className="flex flex-col gap-1.5 rounded-md border border-neutral-800 bg-neutral-950 p-2.5">
-          <ShortcutRow keys={['Ctrl', '+', 'V']} desc="Paste image from clipboard" />
-          <ShortcutRow keys={['Ctrl', '+', 'Z']} desc="Undo" />
-          <ShortcutRow keys={['Ctrl', '+', 'Y']} desc="Redo" />
-          <ShortcutRow keys={['Ctrl', '+', 'S']} desc="Save (in-place when possible)" />
-          <ShortcutRow keys={['Esc']} desc="Cancel the in-progress crop draft" />
-          <ShortcutRow keys={['Right-click']} desc="Delete a region in Regions sub-mode" />
-        </div>
+      <Section variant="framed" title="Shortcuts">
+        <ShortcutRow keys={[['Ctrl', 'V']]} desc="Paste image from clipboard" />
+        <ShortcutRow keys={[['Ctrl', 'Z']]} desc="Undo" />
+        <ShortcutRow keys={[['Ctrl', 'Y']]} desc="Redo" />
+        <ShortcutRow keys={[['Ctrl', 'S']]} desc="Save (in-place when possible)" />
+        <ShortcutRow keys={[['Esc']]} desc="Cancel the in-progress crop draft" />
+        <ShortcutRow keys={[['Right-click']]} desc="Delete a region in Regions sub-mode" />
       </Section>
     </aside>
   );
 }
 
-function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
+/** Row-style button used by the Analyzer's Source panel. Shares the
+ *  visual language with BrushRow — subtle hover, no heavy border. */
+function SidebarActionButton({
+  onClick,
+  disabled,
+  icon,
+  label,
+  tone = 'neutral',
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  tone?: 'neutral' | 'danger';
+}) {
+  const danger = tone === 'danger';
   return (
-    <div className="flex items-center gap-2 text-[11px] text-neutral-500">
-      <span className="flex shrink-0 items-center gap-0.5">
-        {keys.map((k) =>
-          k === '+' ? (
-            <span key={k} className="px-0.5 text-neutral-600">
-              +
-            </span>
-          ) : (
-            <kbd
-              key={k}
-              className="rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-[10px] font-medium text-neutral-300"
-            >
-              {k}
-            </kbd>
-          ),
-        )}
-      </span>
-      <span className="leading-snug">{desc}</span>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-neutral-200 transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        danger ? 'hover:bg-rose-500/10 hover:text-rose-200' : 'hover:bg-white/[0.04]'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function ShortcutRow({ keys, desc }: { keys: string[][]; desc: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-md px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-1">
+        {keys.map((chunk, ci) => (
+          <span key={ci} className="inline-flex items-center gap-0.5">
+            {ci > 0 && <span className="px-1 text-[10px] text-neutral-600">+</span>}
+            {chunk.map((k, ki) => (
+              <Kbd key={ki}>{k}</Kbd>
+            ))}
+          </span>
+        ))}
+      </div>
+      <div className="text-[11px] leading-snug text-neutral-500">{desc}</div>
     </div>
   );
 }
 
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="rounded border border-neutral-700 bg-neutral-900 px-1 text-[10px] text-neutral-300">
-      {children}
-    </kbd>
-  );
-}
 
 // ---------- Status strip --------------------------------------------------
 
@@ -1303,7 +1304,7 @@ function EmptyState() {
       </div>
       <div className="text-xs leading-relaxed text-neutral-500">
         Paste from clipboard with <Kbd>Ctrl+V</Kbd>, drag a file onto this area,
-        or use <em>Choose image…</em> in the toolbar below.
+        or use <em>Choose image…</em> in the left panel.
       </div>
     </div>
   );
@@ -1471,17 +1472,15 @@ function SubModeStepper({
         type="button"
         onClick={() => !disabled && onChange(id)}
         disabled={disabled}
-        className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`inline-flex h-7 items-center gap-1.5 rounded-[5px] px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
           active
-            ? 'bg-neutral-800 text-neutral-50'
-            : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100'
+            ? 'bg-neutral-700/80 text-neutral-50 shadow-[0_1px_2px_rgba(0,0,0,0.3)]'
+            : 'text-neutral-400 hover:text-neutral-100'
         }`}
       >
         <span
-          className={`inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] ${
-            active
-              ? 'border-neutral-400 bg-neutral-950 text-neutral-100'
-              : 'border-neutral-700 bg-neutral-900 text-neutral-500'
+          className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold ${
+            active ? 'bg-emerald-500/80 text-neutral-950' : 'bg-white/5 text-neutral-500'
           }`}
         >
           {n}
@@ -1491,8 +1490,11 @@ function SubModeStepper({
     );
   };
 
+  // iPadOS-style segmented control: inset background, raised active
+  // state with a subtle shadow. Gives a clear "two connected steps"
+  // read without the buttons looking individual.
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-md border border-neutral-800 bg-neutral-950 p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-md border border-white/5 bg-white/[0.03] p-0.5">
       <Step id="calibrate" n={1} label="Calibrate" />
       <Step id="regions" n={2} label="Regions" disabled={!hasCalibration} />
     </div>
@@ -2163,67 +2165,65 @@ function BrushPanel({
   );
 
   return (
-    <aside className="flex flex-col gap-4 border-l border-neutral-800 bg-neutral-950 p-4">
-      <Section title="Retouch brush">
-        <p className="text-[11px] leading-snug text-neutral-500">
+    <aside className="flex flex-col gap-5 border-l border-neutral-800 bg-neutral-950 p-4">
+      <Section variant="framed" title="Retouch brush">
+        <div className="px-2 pt-1 pb-2 text-[11px] leading-snug text-neutral-500">
           {enabled
             ? 'Click a cell on the image to set it to the active brush.'
             : 'Draw a selection to start analyzing. The brush turns on once the detector has something to fix.'}
-        </p>
-        <div className={`flex flex-col gap-1 ${enabled ? '' : 'opacity-50'}`}>
-          {PIECES.map((p) => (
-            <BrushRow
-              key={p.id}
-              selected={enabled && brush === p.id}
-              disabled={!enabled}
-              onClick={() => onBrushChange(p.id as PieceColor)}
-              label={p.label}
-              swatch={
-                <span
-                  className="inline-block h-4 w-4 rounded-sm"
-                  style={{ backgroundColor: p.hex }}
-                  aria-hidden
-                />
-              }
-            />
-          ))}
+        </div>
+        {PIECES.map((p) => (
           <BrushRow
-            selected={enabled && brush === 'gap'}
+            key={p.id}
+            selected={enabled && brush === p.id}
             disabled={!enabled}
-            onClick={() => onBrushChange('gap')}
-            label="Gap"
-            title="Mark a cell as a structural hole (no tile ever goes there)"
+            onClick={() => onBrushChange(p.id as PieceColor)}
+            label={p.label}
             swatch={
               <span
-                className="inline-block h-4 w-4 rounded-sm border border-neutral-600"
-                style={{
-                  backgroundImage:
-                    'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
-                }}
+                className="inline-block h-4 w-4 rounded-sm"
+                style={{ backgroundColor: p.hex }}
                 aria-hidden
               />
             }
           />
-          <BrushRow
-            selected={enabled && brush === 'eraser'}
-            disabled={!enabled}
-            onClick={() => onBrushChange('eraser')}
-            label="Eraser"
-            swatch={
-              <span
-                className="inline-flex h-4 w-4 items-center justify-center rounded-sm border border-dashed border-neutral-500 bg-neutral-950 text-neutral-400"
-                aria-hidden
-              >
-                <EraserIcon className="h-3 w-3" />
-              </span>
-            }
-          />
-        </div>
+        ))}
+        <BrushRow
+          selected={enabled && brush === 'gap'}
+          disabled={!enabled}
+          onClick={() => onBrushChange('gap')}
+          label="Gap"
+          title="Mark a cell as a structural hole (no tile ever goes there)"
+          swatch={
+            <span
+              className="inline-block h-4 w-4 rounded-sm border border-neutral-600"
+              style={{
+                backgroundImage:
+                  'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
+              }}
+              aria-hidden
+            />
+          }
+        />
+        <BrushRow
+          selected={enabled && brush === 'eraser'}
+          disabled={!enabled}
+          onClick={() => onBrushChange('eraser')}
+          label="Eraser"
+          swatch={
+            <span
+              className="inline-flex h-4 w-4 items-center justify-center rounded-sm border border-dashed border-neutral-500 bg-neutral-950 text-neutral-400"
+              aria-hidden
+            >
+              <EraserIcon className="h-3 w-3" />
+            </span>
+          }
+        />
       </Section>
 
       {analyses.length > 0 && (
-        <Section title="Detection">
-          <ul className="flex flex-col gap-1.5 text-[11px] text-neutral-400">
+        <Section variant="framed" title="Detection">
+          <ul className="flex flex-col gap-1.5 px-2 py-1.5 text-[11px] text-neutral-400">
             {analyses.map((a, i) => (
               <li key={a.rectId} className="flex items-center justify-between">
                 <span>
@@ -2234,17 +2234,17 @@ function BrushPanel({
                 </span>
               </li>
             ))}
+            {totalCells > 0 && (
+              <li className="border-t border-white/5 pt-1.5 text-neutral-500">
+                {filledCells} of {totalCells} cells classified
+              </li>
+            )}
           </ul>
-          {totalCells > 0 && (
-            <div className="text-[11px] text-neutral-500">
-              {filledCells} of {totalCells} cells classified.
-            </div>
-          )}
         </Section>
       )}
 
-      <Section title="About analysis">
-        <p className="text-[11px] leading-snug text-neutral-500">
+      <Section variant="framed" title="About analysis">
+        <p className="px-2 py-1.5 text-[11px] leading-snug text-neutral-500">
           <BrushIcon className="mb-0.5 mr-1 inline h-3.5 w-3.5 text-neutral-500" />
           Analysis is best-effort: dominant hue per cell center. Retouch any
           miss here, then save from the top right.
@@ -2254,9 +2254,9 @@ function BrushPanel({
   );
 }
 
-/** Row-style brush button matching the Board Generator convention: swatch
- *  on the left, label, optional hotkey pill on the right. Selected rows
- *  get the elevated `bg-neutral-800` treatment like the sidebar panels. */
+/** Row-style brush button. Matches the Generator's BrushButton: subtle
+ *  row fill plus a 2px emerald accent bar on the left edge when
+ *  selected. Quieter than a bordered pill but unmistakable. */
 function BrushRow({
   selected,
   disabled,
@@ -2280,21 +2280,23 @@ function BrushRow({
       onClick={onClick}
       disabled={disabled}
       title={title ?? label}
-      className={`flex h-9 items-center justify-between gap-2 rounded-md border px-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed ${
+      className={`relative flex h-9 items-center justify-between gap-2 rounded-md px-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed ${
         selected
-          ? 'border-neutral-500 bg-neutral-800 text-neutral-50'
-          : 'border-neutral-800 bg-neutral-950 text-neutral-200 hover:border-neutral-700'
+          ? 'bg-white/[0.06] text-neutral-50'
+          : 'text-neutral-200 hover:bg-white/[0.035]'
       }`}
     >
+      {selected && (
+        <span
+          aria-hidden
+          className="absolute left-1 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-emerald-400"
+        />
+      )}
       <span className="flex items-center gap-2.5">
         {swatch}
         <span>{label}</span>
       </span>
-      {hotkey && (
-        <kbd className="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
-          {hotkey}
-        </kbd>
-      )}
+      {hotkey && <Kbd>{hotkey}</Kbd>}
     </button>
   );
 }

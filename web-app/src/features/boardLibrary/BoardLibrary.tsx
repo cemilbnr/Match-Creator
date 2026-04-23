@@ -131,7 +131,8 @@ function BoardCard({
   return (
     // Fixed card height keeps the grid tidy when mixing tiny (3×3) and
     // large (12×12) boards — the thumbnail area absorbs the variance.
-    <article className="group flex h-[320px] flex-col gap-3 rounded-lg border border-neutral-800 bg-neutral-925 p-4 transition hover:border-neutral-700">
+    // Hover nudges the card 1px up as tactile affordance.
+    <article className="group flex h-[320px] flex-col gap-3 rounded-lg border border-neutral-800 bg-neutral-925 p-4 transition hover:-translate-y-px hover:border-neutral-700">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-neutral-50">

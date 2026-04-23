@@ -22,45 +22,48 @@ export function BoardPreferences(props: Props) {
 
   return (
     <div className="flex flex-col gap-5">
-      <Section title="Board">
-        <Field label="Name">
-          <Input
-            type="text"
-            value={props.name}
-            onChange={(e) => props.onNameChange(e.target.value)}
-          />
-        </Field>
-
-        <Field label="Size" hint={`${MIN_BOARD_SIDE}–${MAX_BOARD_SIDE} per side`}>
-          <div className="grid grid-cols-2 gap-2">
-            <LabeledNumber label="W" value={props.width} onChange={props.onWidthChange} />
-            <LabeledNumber label="H" value={props.height} onChange={props.onHeightChange} />
-          </div>
-        </Field>
+      <Section variant="framed" title="Board">
+        <div className="flex flex-col gap-3 p-2">
+          <Field label="Name">
+            <Input
+              type="text"
+              value={props.name}
+              onChange={(e) => props.onNameChange(e.target.value)}
+            />
+          </Field>
+          <Field label="Size" hint={`${MIN_BOARD_SIDE}–${MAX_BOARD_SIDE} per side`}>
+            <div className="grid grid-cols-2 gap-2">
+              <LabeledNumber label="W" value={props.width} onChange={props.onWidthChange} />
+              <LabeledNumber label="H" value={props.height} onChange={props.onHeightChange} />
+            </div>
+          </Field>
+        </div>
       </Section>
 
-      <Section title="Load existing">
-        <select
-          value={exists ? props.currentBoardId : ''}
-          onChange={(e) => {
-            if (e.target.value) props.onLoadBoard(e.target.value);
-          }}
-          className="h-9 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
-        >
-          <option value="" disabled>
-            {props.savedBoards.length === 0 ? 'No boards saved' : 'Select a board…'}
-          </option>
-          {props.savedBoards.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name} ({b.width}×{b.height})
+      <Section variant="framed" title="Load existing">
+        <div className="p-1.5">
+          <select
+            value={exists ? props.currentBoardId : ''}
+            onChange={(e) => {
+              if (e.target.value) props.onLoadBoard(e.target.value);
+            }}
+            className="h-9 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
+          >
+            <option value="" disabled>
+              {props.savedBoards.length === 0 ? 'No boards saved' : 'Select a board…'}
             </option>
-          ))}
-        </select>
+            {props.savedBoards.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name} ({b.width}×{b.height})
+              </option>
+            ))}
+          </select>
+        </div>
       </Section>
 
       {props.tileSet && (
-        <Section title="Tile set">
-          <div className="rounded-md border border-dashed border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-500">
+        <Section variant="framed" title="Tile set">
+          <div className="px-2 py-1.5 text-xs text-neutral-500">
             Default placeholder — material library comes later.
           </div>
         </Section>
