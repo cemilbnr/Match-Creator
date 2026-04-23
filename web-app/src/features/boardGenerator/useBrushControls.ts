@@ -5,6 +5,7 @@ import type { Brush } from '../../types';
 /**
  * Global keyboard controls for painting:
  *   Q = red, W = blue, E = green, R = yellow
+ *   G = gap (structural hole in the board)
  *   Holding Shift temporarily flips the effective brush to 'eraser'
  * Inputs and textareas are ignored so typing a Board name doesn't steal focus.
  */
@@ -27,10 +28,16 @@ export function useBrushControls(initial: Brush = 'red') {
       }
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       if (isEditable(e.target)) return;
-      const color = PIECE_BY_KEY[e.key.toLowerCase()];
+      const k = e.key.toLowerCase();
+      const color = PIECE_BY_KEY[k];
       if (color) {
         e.preventDefault();
         setBrush(color);
+        return;
+      }
+      if (k === 'g') {
+        e.preventDefault();
+        setBrush('gap');
       }
     };
 

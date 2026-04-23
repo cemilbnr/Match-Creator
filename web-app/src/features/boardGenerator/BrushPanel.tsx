@@ -37,6 +37,24 @@ export function BrushPanel({ brush, shiftHeld, onSelect, onFillEmpty }: Props) {
         })}
 
         <BrushButton
+          selected={brush === 'gap'}
+          onClick={() => onSelect('gap')}
+          hotkey="G"
+          swatch={
+            <span
+              className="inline-block h-4 w-4 rounded-sm"
+              style={{
+                backgroundImage:
+                  'repeating-linear-gradient(45deg, rgb(23 23 23) 0 2px, rgb(64 64 64) 2px 4px)',
+                borderColor: 'rgb(64 64 64)',
+              }}
+              aria-hidden
+            />
+          }
+          label="Gap"
+        />
+
+        <BrushButton
           selected={brush === 'eraser'}
           onClick={() => onSelect('eraser')}
           hotkey=""
@@ -57,7 +75,7 @@ export function BrushPanel({ brush, shiftHeld, onSelect, onFillEmpty }: Props) {
         className="flex h-9 items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-2.5 text-sm font-medium text-neutral-200 transition hover:border-neutral-600 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
         title={
           brush === 'eraser'
-            ? 'Pick a color brush first'
+            ? 'Pick a color or Gap brush first'
             : 'Fill every empty cell with the selected brush'
         }
       >

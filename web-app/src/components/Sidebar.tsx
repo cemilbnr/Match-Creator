@@ -9,12 +9,14 @@ import {
   GameplayIcon,
   LayersIcon,
   SettingsIcon,
+  ViewfinderIcon,
 } from './icons';
 
 type IconType = (props: { className?: string }) => JSX.Element;
 
 const ICONS: Record<PanelId, IconType> = {
   'board-generator': BoardsIcon as IconType,
+  'board-analyzer': ViewfinderIcon as IconType,
   'board-library': LayersIcon as IconType,
   'gameplay-sequencer': GameplayIcon as IconType,
   settings: SettingsIcon as IconType,

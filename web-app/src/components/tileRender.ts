@@ -15,7 +15,16 @@ export function cellStyleFor(
   mode: TilePreviewMode,
   set: TileSet,
 ): CSSProperties {
-  if (!cell) return {};
+  if (cell === null) return {};
+  if (cell === 'gap') {
+    // Diagonal stripe pattern reads immediately as "not a tile slot" —
+    // distinct from both an unpainted cell and any piece color.
+    return {
+      backgroundImage:
+        'repeating-linear-gradient(45deg, rgb(23 23 23) 0 4px, rgb(38 38 38) 4px 8px)',
+      borderColor: 'rgb(64 64 64)',
+    };
+  }
   if (mode === 'fill') {
     const hex = PIECE_BY_ID[cell].hex;
     return { backgroundColor: hex, borderColor: hex };

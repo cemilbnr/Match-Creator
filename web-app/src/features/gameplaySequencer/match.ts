@@ -6,6 +6,13 @@ export function randomPiece(): PieceColor {
   return COLORS[Math.floor(Math.random() * COLORS.length)]!;
 }
 
+/** A cell is "piece-like" if it holds one of the four colors — i.e. not a
+ *  structural gap and not an empty slot. Gap cells are excluded from
+ *  matching, gravity, and spawn. */
+function isPiece(v: Cell): v is PieceColor {
+  return v !== null && v !== 'gap';
+}
+
 export const key = (row: number, col: number) => `${row}:${col}`;
 
 export function isAdjacent(
@@ -51,10 +58,10 @@ export function findMatches(grid: Cell[][]): Set<string> {
       const curr = c < w ? grid[r]![c] : null;
       const startVal = grid[r]![runStart];
       const continueRun =
-        c < w && startVal !== null && curr !== null && curr === startVal;
+        c < w && isPiece(startVal) && isPiece(curr) && curr === startVal;
       if (continueRun) continue;
       const runLen = c - runStart;
-      if (runLen >= 3 && startVal !== null) {
+      if (runLen >= 3 && isPiece(startVal)) {
         for (let k = runStart; k < c; k++) matched.add(key(r, k));
       }
       runStart = c;
@@ -68,10 +75,10 @@ export function findMatches(grid: Cell[][]): Set<string> {
       const curr = r < h ? grid[r]![c] : null;
       const startVal = grid[runStart]![c];
       const continueRun =
-        r < h && startVal !== null && curr !== null && curr === startVal;
+        r < h && isPiece(startVal) && isPiece(curr) && curr === startVal;
       if (continueRun) continue;
       const runLen = r - runStart;
-      if (runLen >= 3 && startVal !== null) {
+      if (runLen >= 3 && isPiece(startVal)) {
         for (let k = runStart; k < r; k++) matched.add(key(k, c));
       }
       runStart = r;
@@ -83,7 +90,7 @@ export function findMatches(grid: Cell[][]): Set<string> {
     for (let c = 0; c < w - 1; c++) {
       const v = grid[r]![c];
       if (
-        v !== null &&
+        isPiece(v) &&
         v === grid[r]![c + 1] &&
         v === grid[r + 1]![c] &&
         v === grid[r + 1]![c + 1]
@@ -116,19 +123,32 @@ export function applyGravityAndSpawn(grid: Cell[][]): Cell[][] {
     new Array<Cell>(w).fill(null),
   );
 
+  // Gaps act as immovable barriers: each column is split into segments
+  // bounded by gap cells. Pieces fall to the bottom of their segment and
+  // the segment's top fills with fresh random pieces.
   for (let c = 0; c < w; c++) {
-    const column: PieceColor[] = [];
+    let segStart = 0;
+    const closeSegment = (segEnd: number) => {
+      const pieces: PieceColor[] = [];
+      for (let r = segStart; r < segEnd; r++) {
+        const v = grid[r]![c];
+        if (isPiece(v)) pieces.push(v);
+      }
+      const segLen = segEnd - segStart;
+      const empties = segLen - pieces.length;
+      for (let i = 0; i < empties; i++) next[segStart + i]![c] = randomPiece();
+      for (let i = 0; i < pieces.length; i++) {
+        next[segStart + empties + i]![c] = pieces[i]!;
+      }
+    };
     for (let r = 0; r < h; r++) {
-      const v = grid[r]![c];
-      if (v !== null) column.push(v);
+      if (grid[r]![c] === 'gap') {
+        closeSegment(r);
+        next[r]![c] = 'gap';
+        segStart = r + 1;
+      }
     }
-    const empties = h - column.length;
-    for (let r = 0; r < empties; r++) {
-      next[r]![c] = randomPiece();
-    }
-    for (let i = 0; i < column.length; i++) {
-      next[empties + i]![c] = column[i]!;
-    }
+    closeSegment(h);
   }
 
   return next;

@@ -99,7 +99,9 @@ export function buildBlenderExport(
   for (let r = 0; r < height; r++) {
     for (let c = 0; c < width; c++) {
       const color = initialGrid[r]?.[c] ?? null;
-      if (color === null) continue;
+      // `gap` cells are structural holes in the board — no tile ever spawns
+      // there, so they're skipped entirely during export.
+      if (color === null || color === 'gap') continue;
       const id = makePieceId(counter);
       const p: LivePiece = { id, color, row: r, col: c, keyframes: [] };
       pushKf(p, { frame, row: r, col: c, scale: 1, dip: 0 });
@@ -277,7 +279,7 @@ export function buildBlenderExport(
       // Handle spawns: create new piece, starts at entryRow scale 1, falls in
       for (const sp of spawns) {
         const color = afterCascade[sp.toRow]?.[sp.col];
-        if (!color) continue;
+        if (!color || color === 'gap') continue;
         const id = makePieceId(counter);
         const p: LivePiece = {
           id,

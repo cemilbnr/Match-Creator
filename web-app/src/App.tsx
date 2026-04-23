@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { AppShell } from './components/AppShell';
 import { UpdateBanner } from './components/UpdateBanner';
+import { BoardAnalyzer } from './features/boardAnalyzer/BoardAnalyzer';
 import { BoardGenerator } from './features/boardGenerator/BoardGenerator';
 import { BoardLibrary } from './features/boardLibrary/BoardLibrary';
 import { GameplaySequencer } from './features/gameplaySequencer/GameplaySequencer';
@@ -31,6 +32,7 @@ export default function App() {
   return (
     <AppShell banner={<UpdateBanner />}>
       {activePanel === 'board-generator' && <BoardGenerator />}
+      {activePanel === 'board-analyzer' && <BoardAnalyzer />}
       {activePanel === 'board-library' && <BoardLibrary />}
       {activePanel === 'gameplay-sequencer' && <GameplaySequencer />}
       {activePanel === 'settings' && <SettingsPanel />}

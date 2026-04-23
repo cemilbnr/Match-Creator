@@ -3,6 +3,7 @@ import { useSequencer } from './sequencerStore';
 
 export type PanelId =
   | 'board-generator'
+  | 'board-analyzer'
   | 'board-library'
   | 'gameplay-sequencer'
   | 'settings';
@@ -14,6 +15,7 @@ interface PanelDef {
 
 export const PANELS: PanelDef[] = [
   { id: 'board-generator', label: 'Board Generator' },
+  { id: 'board-analyzer', label: 'Board Analyzer' },
   { id: 'board-library', label: 'Board Library' },
   { id: 'gameplay-sequencer', label: 'Gameplay Sequencer' },
   { id: 'settings', label: 'Settings' },

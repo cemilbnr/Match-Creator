@@ -6,7 +6,49 @@ Format is loosely based on [Keep a Changelog](https://keepachangelog.com/) and
 the project follows semantic versioning once it hits 1.0. Pre-1.0 releases are
 beta and may ship breaking changes between minor bumps.
 
-## [0.2.1-beta] — 2026-04-23
+## [0.3.0-beta] — 2026-04-23
+
+### Added
+- **Board Analyzer** — new sidebar tab that turns match-3 board screenshots
+  into editable boards. Workflow: paste/drop/pick an image → toggle Crop
+  mode → draw one or more rectangular selections around the board area
+  (square-locked optional; 8 resize handles per selection, center trash
+  gizmo, Ctrl+Z/Ctrl+Y) → exit crop mode → the grid dimensions and piece
+  colors are inferred automatically → retouch any wrong cell with the
+  brush on the right → save to the Library from the top right.
+- Overlapping selections merge into a single analyzed region (union-find
+  over bounding-box overlap) so split crops can still represent one
+  logical board.
+- Autocorrelation-based grid detection with harmonic suppression: the
+  detector now averages correlation across every multiple of a candidate
+  lag and prefers the smallest N whose score is within 85% of the best,
+  which keeps boards like 3×3 from getting reported as 6×6 when tile
+  highlights produce sub-tile periodicity.
+- Hue-histogram piece classifier (red / blue / green / yellow) with
+  saturation weighting and specular/shadow filtering. Low-confidence or
+  background cells come back as empty.
+- Save-as modal replaces the old `window.prompt` — shows the detected
+  grid size + classified cell count, ESC cancels, click-outside cancels.
+  After save, a clickable link in the page header opens the Library.
+- **`'gap'` cell type** — a new structural board value distinct from an
+  empty slot. Rendered with diagonal stripes across all panels (Board
+  Generator, Library thumbnails, Sequencer, Board Analyzer brush). Gap
+  cells never participate in matches, act as immovable barriers under
+  gravity (columns split into segments bounded by gaps), and are skipped
+  entirely when exporting a variant to Blender. The Generator's
+  **G** hotkey paints gap; the Analyzer's brush has a new Gap swatch.
+
+### Changed
+- `Cell = PieceColor | 'gap' | null` and `Brush = PieceColor | 'eraser' |
+  'gap'`. Saved boards from prior versions remain compatible (no boards
+  held `'gap'` before).
+
+### Fixed
+- Analyzer Save / Save as buttons no longer require exiting Crop mode
+  first. Tooltip messaging also clarified: "Draw a selection first" vs
+  "Overlap selections to merge into one region to save".
+
+
 
 ### Fixed
 - `Check for updates` no longer surfaces a scary "Update failed" banner when
