@@ -11,7 +11,7 @@ import {
   ViewfinderIcon,
 } from '../../components/icons';
 import { Button, Field, IconButton, PageHeader, Pill, Section } from '../../components/ui';
-import type { Board, PieceColor } from '../../types';
+import type { Board, Cell, PieceColor } from '../../types';
 import { PIECES, PIECE_BY_ID } from '../../data/pieceTypes';
 import { useLibrary } from '../../store/libraryStore';
 import { useUI } from '../../store/uiStore';
@@ -327,34 +327,51 @@ export function BoardAnalyzer() {
     return () => window.removeEventListener('paste', onPaste);
   }, [loadFile]);
 
-  // --- Keyboard: Ctrl+Z / Ctrl+Y / Escape ---------------------------------
+  // Group overlapping rects so each connected component is analyzed as a
+  // single region (bounding box union). Disjoint rects stay independent.
+  const groups = useMemo(() => computeGroups(rects), [rects]);
 
+  // --- Keyboard: Ctrl+Z / Ctrl+Y / Ctrl+S / Escape -------------------------
+
+  // Keyboard shortcuts. Effect re-registers when the referenced state
+  // changes so the Ctrl+S handler always sees current values.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tgt = e.target as HTMLElement | null;
       if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) return;
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') {
+      const k = e.key.toLowerCase();
+      if (mod && !e.shiftKey && k === 'z') {
         e.preventDefault();
         history.undo();
-      } else if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+      } else if (mod && (k === 'y' || (e.shiftKey && k === 'z'))) {
         e.preventDefault();
         history.redo();
-      } else if (e.key === 'Escape') {
-        if (draft) {
-          setDraft(null);
-        } else if (cropMode) {
-          setCropMode(false);
+      } else if (mod && !e.shiftKey && k === 's') {
+        if (analyses.length === 0) return;
+        e.preventDefault();
+        if (sessionBoardId) {
+          const current = useLibrary
+            .getState()
+            .boards.find((b) => b.id === sessionBoardId);
+          if (current) {
+            const board = buildComposedBoard(sessionBoardId, current.name);
+            if (board) {
+              saveBoard(board);
+              flashSaved();
+              return;
+            }
+          }
         }
+        setSaveModalOpen(true);
+      } else if (e.key === 'Escape') {
+        if (draft) setDraft(null);
+        else if (cropMode) setCropMode(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [history, draft, cropMode]);
-
-  // Group overlapping rects so each connected component is analyzed as a
-  // single region (bounding box union). Disjoint rects stay independent.
-  const groups = useMemo(() => computeGroups(rects), [rects]);
+  }, [history, draft, cropMode, analyses, groups, sessionBoardId, saveBoard]);
 
   // --- Live re-analysis: debounced so drags don't thrash the CPU ----------
 
@@ -418,11 +435,12 @@ export function BoardAnalyzer() {
 
   // --- Save / Save as ----------------------------------------------------
 
-  // Save is available whenever there's exactly one analyzed region. Crop
-  // mode doesn't block it — the user can commit their edits implicitly
-  // via save. (Multi-region save isn't supported yet; user can overlap
-  // selections to merge them into one region first.)
-  const saveable = analyses.length === 1;
+  // Save composes a single board from all regions: the envelope bbox of
+  // every user rect becomes the board canvas; cells that fall inside a
+  // region inherit that region's analyzed piece; cells that fall outside
+  // every region become structural gaps. So a "piecewise" board made of
+  // several disjoint crops still saves as one coherent board.
+  const saveable = analyses.length >= 1;
   const canSaveAs = saveable;
   const canSave = saveable;
 
@@ -431,34 +449,90 @@ export function BoardAnalyzer() {
     window.setTimeout(() => setSavedFlash(false), 2200);
   };
 
-  const buildBoardFromAnalysis = (a: AnalysisResult, id: string, name: string): Board => {
-    const now = Date.now();
-    return {
-      id,
-      name,
-      width: a.cols,
-      height: a.rows,
-      tileSet: 'default',
-      layout: a.cells.map((row) => row.slice()),
-      createdAt: now,
-      updatedAt: now,
+  /** Build a single "mega" board that spans the envelope bounding box of
+   *  every user rect. Cell size is taken from the first region (screenshot
+   *  tiles are assumed uniform across crops). Cells inside any region get
+   *  that region's classified color; cells outside every region become
+   *  `'gap'`, so a piecewise composed board saves as one coherent layout. */
+  const buildComposedBoard = (id: string, name: string): Board | null => {
+    if (analyses.length === 0 || groups.length === 0) return null;
+    const firstGroup = groups[0]!;
+    const firstAnalysis = analyses.find((a) => a.rectId === firstGroup.id);
+    if (!firstAnalysis || firstAnalysis.cols <= 0 || firstAnalysis.rows <= 0) {
+      return null;
+    }
+    const allRects = groups.flatMap((g) => g.rects);
+    const envelope = {
+      x: Math.min(...allRects.map((r) => r.x)),
+      y: Math.min(...allRects.map((r) => r.y)),
+      x2: Math.max(...allRects.map((r) => r.x + r.w)),
+      y2: Math.max(...allRects.map((r) => r.y + r.h)),
     };
+    const envW = envelope.x2 - envelope.x;
+    const envH = envelope.y2 - envelope.y;
+    const cellW = firstGroup.bbox.w / firstAnalysis.cols;
+    const cellH = firstGroup.bbox.h / firstAnalysis.rows;
+    const cols = Math.max(1, Math.round(envW / cellW));
+    const rows = Math.max(1, Math.round(envH / cellH));
+
+    const layout: Cell[][] = [];
+    for (let r = 0; r < rows; r++) {
+      const row: Cell[] = [];
+      for (let c = 0; c < cols; c++) {
+        const cx = envelope.x + (c + 0.5) * cellW;
+        const cy = envelope.y + (r + 0.5) * cellH;
+        let placed: Cell = 'gap';
+        for (const g of groups) {
+          if (!pointInUnion({ x: cx, y: cy }, g.rects)) continue;
+          const a = analyses.find((an) => an.rectId === g.id);
+          if (!a) continue;
+          const lc = Math.floor(((cx - g.bbox.x) / g.bbox.w) * a.cols);
+          const lr = Math.floor(((cy - g.bbox.y) / g.bbox.h) * a.rows);
+          if (lr >= 0 && lr < a.rows && lc >= 0 && lc < a.cols) {
+            placed = a.cells[lr]?.[lc] ?? null;
+          }
+          break;
+        }
+        row.push(placed);
+      }
+      layout.push(row);
+    }
+
+    const now = Date.now();
+    return { id, name, width: cols, height: rows, tileSet: 'default', layout, createdAt: now, updatedAt: now };
   };
 
   const newBoardId = () =>
     `board_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-  // Save as — always pops the naming modal. Confirming creates a new entry.
+  // Save as — always pops the naming modal. Confirming creates one entry
+  // per analyzed region (names get suffixed "(i/n)" for multi-region).
   const openSaveAsModal = () => {
     if (!saveable) return;
     setSaveModalOpen(true);
   };
 
   const confirmSaveAs = (name: string) => {
-    if (!saveable) return;
-    const a = analyses[0]!;
+    if (analyses.length === 0) {
+      setSaveModalOpen(false);
+      return;
+    }
+    const base = name.trim() || `Analyzed ${new Date().toLocaleString()}`;
     const id = newBoardId();
-    saveBoard(buildBoardFromAnalysis(a, id, name));
+    const board = buildComposedBoard(id, base);
+    if (!board) {
+      setSaveModalOpen(false);
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[BoardAnalyzer] saving composed board', {
+      id,
+      name: base,
+      width: board.width,
+      height: board.height,
+      regions: analyses.length,
+    });
+    saveBoard(board);
     setSessionBoardId(id);
     setSaveModalOpen(false);
     flashSaved();
@@ -475,8 +549,9 @@ export function BoardAnalyzer() {
       setSessionBoardId(null);
       return openSaveAsModal();
     }
-    const a = analyses[0]!;
-    saveBoard(buildBoardFromAnalysis(a, sessionBoardId, current.name));
+    const board = buildComposedBoard(sessionBoardId, current.name);
+    if (!board) return;
+    saveBoard(board);
     flashSaved();
   };
 
@@ -522,11 +597,9 @@ export function BoardAnalyzer() {
               title={
                 canSave
                   ? sessionBoardId
-                    ? `Update "${savedBoardName ?? 'the saved board'}"`
-                    : 'Save to library'
-                  : analyses.length === 0
-                    ? 'Draw a selection first'
-                    : 'Overlap selections to merge into one region to save'
+                    ? `Update "${savedBoardName ?? 'the saved board'}" (Ctrl+S)`
+                    : 'Save to library (Ctrl+S)'
+                  : 'Draw a selection first'
               }
             >
               Save
@@ -537,10 +610,10 @@ export function BoardAnalyzer() {
               onClick={openSaveAsModal}
               title={
                 canSaveAs
-                  ? 'Save as a new board'
-                  : analyses.length === 0
-                    ? 'Draw a selection first'
-                    : 'Overlap selections to merge into one region to save'
+                  ? analyses.length === 1
+                    ? 'Save as a new board'
+                    : `Compose ${analyses.length} regions into one board (unselected areas become gaps)`
+                  : 'Draw a selection first'
               }
             >
               Save as…
@@ -590,9 +663,27 @@ export function BoardAnalyzer() {
           analyses={analyses}
         />
       </div>
-      {saveModalOpen && analyses[0] && (
+      {saveModalOpen && analyses.length > 0 && (
         <SaveAsModal
-          analysis={analyses[0]}
+          preview={(() => {
+            const preview = buildComposedBoard('preview', '');
+            if (!preview) return null;
+            const classified = preview.layout.reduce(
+              (acc, row) => acc + row.filter((c) => c !== null && c !== 'gap').length,
+              0,
+            );
+            const gaps = preview.layout.reduce(
+              (acc, row) => acc + row.filter((c) => c === 'gap').length,
+              0,
+            );
+            return {
+              cols: preview.width,
+              rows: preview.height,
+              classifiedCells: classified,
+              gapCells: gaps,
+              regionCount: analyses.length,
+            };
+          })()}
           onCancel={() => setSaveModalOpen(false)}
           onConfirm={confirmSaveAs}
         />
@@ -603,12 +694,20 @@ export function BoardAnalyzer() {
 
 // ---------- Save-as modal --------------------------------------------------
 
+interface SavePreview {
+  cols: number;
+  rows: number;
+  classifiedCells: number;
+  gapCells: number;
+  regionCount: number;
+}
+
 function SaveAsModal({
-  analysis,
+  preview,
   onCancel,
   onConfirm,
 }: {
-  analysis: AnalysisResult;
+  preview: SavePreview | null;
   onCancel: () => void;
   onConfirm: (name: string) => void;
 }) {
@@ -617,11 +716,6 @@ function SaveAsModal({
     [],
   );
   const [name, setName] = useState(defaultName);
-  const classified = analysis.cells.reduce(
-    (c, row) => c + row.filter(Boolean).length,
-    0,
-  );
-  const total = analysis.rows * analysis.cols;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -646,10 +740,18 @@ function SaveAsModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-semibold text-neutral-50">Save board</h2>
-        <p className="mt-0.5 text-xs text-neutral-500">
-          {analysis.cols} × {analysis.rows} board · {classified} of {total} cells
-          classified
-        </p>
+        {preview && (
+          <p className="mt-0.5 text-xs text-neutral-500">
+            {preview.cols} × {preview.rows} board · {preview.classifiedCells}{' '}
+            tile{preview.classifiedCells === 1 ? '' : 's'}
+            {preview.gapCells > 0
+              ? ` · ${preview.gapCells} gap cell${preview.gapCells === 1 ? '' : 's'}`
+              : ''}
+            {preview.regionCount > 1
+              ? ` · composed from ${preview.regionCount} regions`
+              : ''}
+          </p>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();

@@ -235,7 +235,8 @@ export async function analyzeImage(
     const ry = Math.max(0, Math.floor(rect.y));
     const rw = Math.min(img.width - rx, Math.floor(rect.w));
     const rh = Math.min(img.height - ry, Math.floor(rect.h));
-    if (rw < 24 || rh < 24) continue;
+    // Below this size autocorrelation has nothing to latch onto.
+    if (rw < 12 || rh < 12) continue;
 
     // Luminance profile per row / per column.
     const rowProfile = new Array<number>(rh);
