@@ -574,12 +574,20 @@ def build_or_update(payload: dict) -> dict:
     if end_frame > scene.frame_end:
         scene.frame_end = end_frame
 
-    # Load custom assets (if the user configured an asset .blend).
+    # Resolve the active asset .blend. By default the addon ships a
+    # bundled MC_Assets.blend; the user can opt into a custom override
+    # from the addon preferences. `effective_asset_blend()` handles the
+    # full priority chain (custom-when-toggled-and-valid → bundled →
+    # empty for procedural fallback).
     asset_blend = ""
     try:
         from .. import preferences
         prefs = preferences.get(bpy.context)
-        asset_blend = getattr(prefs, "asset_blend", "") or ""
+        if hasattr(prefs, "effective_asset_blend"):
+            asset_blend = prefs.effective_asset_blend() or ""
+        else:
+            # Older preferences shape — treat asset_blend as the only source.
+            asset_blend = getattr(prefs, "asset_blend", "") or ""
     except Exception:  # noqa: BLE001
         pass
     templates = _load_asset_templates(asset_blend)
