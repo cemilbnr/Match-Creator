@@ -11,7 +11,12 @@ as an animated collection.
 
 - **Board Generator** — paint boards by hand with a 4-color palette plus
   gap cells. Keyboard brushes, fill-empty, wipe-by-color, replace-color,
-  shift-lock to protect filled cells.
+  shift-lock to protect filled cells. **4-sided `+/-` edge buttons** on
+  the canvas grow or shrink the grid from any side (`Ctrl` flips `+` to
+  `-`). **Marquee selection tool** (`V`) with floating drag-to-move,
+  in-place rotate gizmo, copy / cut / paste / delete, and an Aseprite-
+  style float-and-stamp commit flow. Layout state persists across panel
+  switches and app restarts.
 - **Board Analyzer** — drop a screenshot, crop the board area, let the
   analyzer infer the grid size and piece colors from the image. Retouch
   any misdetected cells, then save. Overlapping crops merge into one
@@ -22,10 +27,18 @@ as an animated collection.
 - **Gameplay Sequencer** — drag pieces on a selected board to record
   swap/match sequences. Per-match cards let you continue from any point,
   change the required match length, or toggle board previews. Fail swaps
-  record red, successful matches record green.
+  record red, successful matches record green. **Stop button** aborts
+  an in-flight replay in a single frame. **Edit board mode** opens the
+  full Generator toolset on the active variant — save changes back to
+  the variant, overwrite the underlying board, or fork a brand new
+  board. **Variant notes** sit behind a chevron on each variant card so
+  shared collections stay self-documenting.
 - **Blender bridge** — footer dot turns green when the Blender add-on is
   running. Send a variant with one click; the add-on builds or updates
-  the `GP_MC` collection.
+  the `GP_MC` collection. **Sync matches with markers** (default ON)
+  pins each match to scene timeline markers named `"1"`, `"2"`, `"3"`…
+  Variant `layoutOverride`s travel with the export, so per-variant
+  colour/gap edits reach Blender as the new skeleton.
 - **Auto-updater** — the app checks GitHub Releases on launch and from
   Settings → Updates. Signed MSI installs run automatically.
 
@@ -37,6 +50,10 @@ as an animated collection.
 - `/api/gameplay` builds or updates a variant inside a `GP_MC` parent
   collection with per-piece animation (location, scale, Y-dip) and
   tileback pulses.
+- `/api/markers` returns the active scene's timeline markers
+  (`{ name, frame }[]`) sorted by frame. The desktop app uses this
+  endpoint to align match swaps with markers named `"1"`, `"2"`,
+  `"3"`… so beat-locked sequences stay perfectly synced to the scene.
 - Optional custom `MC_Assets.blend` — point the add-on at your own
   `MC_Tile` / `MC_Tileback` meshes and `MC_Material_<Color>` materials
   to override the procedural defaults. See [docs/ASSET_SPEC.md](docs/ASSET_SPEC.md).
@@ -68,6 +85,7 @@ as an animated collection.
 
 | Shortcut | Action |
 |---|---|
+| `B` / `V` | Brush tool / Select (marquee) tool |
 | `Q` `W` `E` `R` | Red / Blue / Green / Yellow brush |
 | `G` | Gap brush (structural hole) |
 | `Ctrl+F` | Fill every empty cell with the active brush |
@@ -75,6 +93,12 @@ as an animated collection.
 | Right-click | Erase a cell |
 | `Ctrl` + right-click | Wipe every cell of the clicked color |
 | `Alt` + right-click | Repaint every cell of that color with the active brush |
+| Hover canvas edge | `+` button adds a row/col on that side. `Ctrl` flips it to `-` |
+| `Ctrl+C` / `X` / `V` | Copy / cut / paste the marquee selection |
+| `R` | Rotate the float (or selection in place) 90° CW |
+| Drag inside selection | Lift the cells into a floating layer; release to stamp |
+| `Enter` / `Esc` | Drop or cancel a floating selection |
+| `Del` | Clear cells under selection (drops a float without stamping) |
 
 ### Board Analyzer
 
@@ -97,6 +121,32 @@ apply automatically; the app walks the cascade one match at a time and
 adds a card to the bottom strip for each step. Use the right rail to
 pick between recorded variants. Send the active variant to Blender from
 the footer.
+
+| Shortcut | Action |
+|---|---|
+| `Space` | Play / Stop the active variant's replay |
+| `Esc` | Stop a running replay (or close edit mode if the marquee is empty) |
+| `Ctrl+Enter` | (Edit board mode) Save changes to the active variant |
+
+**Sync matches with markers** lives behind the gear icon. Default ON;
+toggle off if you want every variant to play back-to-back without
+respecting the timeline markers in Blender. When sending, the app
+matches each numeric marker (`"1"`, `"2"`, `"3"`…) to the corresponding
+match. If the variant has more matches than markers, you'll get a
+confirm dialog before the export proceeds.
+
+**Edit board** opens the active variant in an inline editor with the
+full Board Generator toolset. Three commit options:
+
+- `Save to variant` — only the current variant gets the layout change
+  (`Ctrl+Enter`).
+- `Save` — overwrites the underlying board in the library; other
+  variants of the same board pick up the change automatically unless
+  they have their own `layoutOverride`.
+- `Save as new board…` — creates a fresh board in the library; the
+  current variant stays linked to the original board until you switch.
+
+`Cancel` (or `Esc` with an empty marquee) discards all changes.
 
 ## Development
 

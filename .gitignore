@@ -45,3 +45,6 @@ releases/
 .env
 .env.local
 .env.*.local
+
+# --- Dev sandbox copies (canonical frontend lives at web-app/) ---
+Match_Creator_Frontend/

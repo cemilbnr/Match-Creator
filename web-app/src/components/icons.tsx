@@ -216,6 +216,14 @@ export function CheckIcon(p: IconProps) {
   );
 }
 
+export function StopIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function CloseIcon(p: IconProps) {
   return (
     <svg {...stroke} {...p}>

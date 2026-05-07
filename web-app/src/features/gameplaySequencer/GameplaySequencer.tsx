@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { BoardView } from '../../components/BoardView';
 import {
+  EditIcon,
   RefreshIcon,
   ZoomInIcon,
   ZoomOutIcon,
 } from '../../components/icons';
-import { IconButton, PageHeader } from '../../components/ui';
+import { Button, IconButton, PageHeader } from '../../components/ui';
 import { useLibrary } from '../../store/libraryStore';
 import {
   MAX_CELL_SIZE,
@@ -20,6 +21,7 @@ import { MatchStrip } from './MatchStrip';
 import { SequencerRightRail } from './SequencerRightRail';
 import { SequencerSettingsMenu } from './SequencerSettingsMenu';
 import { useAnimationLoop } from './useAnimationLoop';
+import { VariantEditor } from './VariantEditor';
 
 const DRAG_THRESHOLD_PX = 10;
 
@@ -39,9 +41,13 @@ export function GameplaySequencer() {
   const handleSwapAttempt = useSequencer((s) => s.handleSwapAttempt);
   const clearSelected = useSequencer((s) => s.clearSelected);
   const replayActive = useSequencer((s) => s.replayActiveVariant);
+  const stopReplay = useSequencer((s) => s.stopReplay);
+  const isReplaying = useSequencer((s) => s.isReplaying);
 
   const activeVariantId = useSequencer((s) => s.activeVariantId);
   const setActiveVariantId = useSequencer((s) => s.setActiveVariantId);
+  const editingVariantId = useSequencer((s) => s.editingVariantId);
+  const beginEditVariant = useSequencer((s) => s.beginEditVariant);
   const cellSize = useSequencer((s) => s.cellSize);
   const zoomIn = useSequencer((s) => s.zoomIn);
   const zoomOut = useSequencer((s) => s.zoomOut);
@@ -56,6 +62,15 @@ export function GameplaySequencer() {
     [boards, boardId],
   );
 
+  // Effective starting layout = active variant's override > board's layout.
+  const activeVariant = useMemo(
+    () => variants.find((v) => v.id === activeVariantId) ?? null,
+    [variants, activeVariantId],
+  );
+  const effectiveLayout = activeVariant?.layoutOverride ?? board?.layout ?? null;
+  const effectiveWidth = effectiveLayout?.[0]?.length ?? board?.width ?? 0;
+  const effectiveHeight = effectiveLayout?.length ?? board?.height ?? 0;
+
   // Default board selection: newest saved board once boards exist.
   useEffect(() => {
     if (boardId !== null) return;
@@ -65,9 +80,12 @@ export function GameplaySequencer() {
   }, [boardId, boards, setBoardId]);
 
   useEffect(() => {
-    if (!board) return;
-    loadBoard(board.layout);
-  }, [board?.id, loadBoard]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!board || !effectiveLayout) return;
+    // Don't trample the playable grid while the user is editing — the editor
+    // operates on a separate store and we only want to reload after commit.
+    if (editingVariantId) return;
+    loadBoard(effectiveLayout);
+  }, [board?.id, activeVariantId, effectiveLayout, editingVariantId, loadBoard]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Default variant: most recent for the active board. Auto-commit creates one
   // on the first drag if none exists, so we only pick one here if there's a
@@ -87,25 +105,38 @@ export function GameplaySequencer() {
 
   useAnimationLoop();
 
-  // Space = play. Ignore while typing in inputs or during animations.
+  // Space toggles play/stop. Esc also stops a running replay. Ignore while
+  // typing in inputs.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return;
       const target = e.target as HTMLElement | null;
-      if (
-        target &&
+      const inField =
+        !!target &&
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      )
+          target.isContentEditable);
+
+      if (e.code === 'Space') {
+        if (inField) return;
+        e.preventDefault();
+        if (isReplaying) {
+          stopReplay();
+        } else if (!animating) {
+          replayActive();
+        }
         return;
-      if (animating) return;
-      e.preventDefault();
-      replayActive();
+      }
+      if (e.code === 'Escape') {
+        if (inField) return;
+        if (isReplaying) {
+          e.preventDefault();
+          stopReplay();
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [animating, replayActive]);
+  }, [animating, isReplaying, replayActive, stopReplay]);
 
   // ---- Drag-to-swap ----
   const dragRef = useRef<{
@@ -159,10 +190,7 @@ export function GameplaySequencer() {
   const canZoomIn = cellSize < MAX_CELL_SIZE;
   const canZoomOut = cellSize > MIN_CELL_SIZE;
 
-  const activeVariantName = useMemo(
-    () => variants.find((v) => v.id === activeVariantId)?.name ?? null,
-    [variants, activeVariantId],
-  );
+  const activeVariantName = activeVariant?.name ?? null;
   const title = board
     ? activeVariantName
       ? `${board.name} · ${activeVariantName}`
@@ -177,6 +205,23 @@ export function GameplaySequencer() {
   const headerActions = board ? (
     <>
       <BoardSwitcher />
+
+      <div className="mx-1 h-6 w-px bg-neutral-800" />
+
+      <Button
+        variant="secondary"
+        size="md"
+        leading={<EditIcon />}
+        onClick={beginEditVariant}
+        disabled={!activeVariantId || animating}
+        title={
+          !activeVariantId
+            ? 'Pick a variant first'
+            : 'Edit this variant\'s board (Ctrl+Enter to save)'
+        }
+      >
+        Edit board
+      </Button>
 
       <div className="mx-1 h-6 w-px bg-neutral-800" />
 
@@ -215,6 +260,13 @@ export function GameplaySequencer() {
     </>
   ) : null;
 
+  // Edit mode swaps the entire panel for the variant editor. Keeps the
+  // sequencer's header / right rail / match strip out of the way so the user
+  // can focus on the board surface.
+  if (editingVariantId) {
+    return <VariantEditor />;
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader eyebrow="Record" title={title} subtitle={subtitle} actions={headerActions} />
@@ -230,8 +282,8 @@ export function GameplaySequencer() {
             <div className="flex items-center justify-center overflow-auto bg-neutral-975 p-6">
               {grid.length > 0 && (
                 <BoardView
-                  width={board.width}
-                  height={board.height}
+                  width={effectiveWidth}
+                  height={effectiveHeight}
                   layout={grid}
                   cellSize={cellSize}
                   gap={Math.max(2, Math.round(cellSize / 14))}

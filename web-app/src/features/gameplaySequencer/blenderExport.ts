@@ -39,6 +39,10 @@ export interface BlenderExport {
   variantName: string;
   fps: number;
   grid: { width: number; height: number };
+  /** Structural skeleton of the board (gap pattern). The add-on uses this to
+   *  decide whether to take the color-only fast path on update or rebuild
+   *  tilebacks. Cell values: 'red'|'green'|'blue'|'yellow'|'gap'|null. */
+  layout: Cell[][];
   startFrame: number;
   endFrame: number;
   pieces: BlenderPiece[];
@@ -72,6 +76,12 @@ function pushKf(p: LivePiece, kf: BlenderKeyframe): void {
  * Main export builder. Simulates the variant's playback with stable piece IDs
  * and emits one keyframe list per piece (initial placement, swap destinations,
  * dip peaks, scale-to-0 on dissolve, fall endpoints, spawn origins).
+ *
+ * `matchStartFrames`, when provided, pins each match's swap to that absolute
+ * scene frame (used by "Sync matches with markers"). Length must equal
+ * `variant.matches.length`; values that are smaller than the natural cumulative
+ * frame are silently raised to maintain causality. Pass `undefined` for the
+ * default behaviour (matches play back-to-back from `startFrame`).
  */
 export function buildBlenderExport(
   board: Board,
@@ -79,6 +89,7 @@ export function buildBlenderExport(
   fps: number,
   mode: BlenderExportMode = 'create',
   startFrame = 1,
+  matchStartFrames?: number[],
 ): BlenderExport {
   const width = board.width;
   const height = board.height;
@@ -111,7 +122,18 @@ export function buildBlenderExport(
   }
 
   // ---- Walk each match ----
-  for (const match of variant.matches) {
+  for (let mi = 0; mi < variant.matches.length; mi++) {
+    const match = variant.matches[mi]!;
+
+    // If the caller supplied marker frames, pad the timeline so this match
+    // starts on the requested marker. Markers earlier than the natural
+    // cumulative frame are ignored (we never travel backwards), and the
+    // padded space stays empty — pieces just hold their previous keyframe.
+    if (matchStartFrames && matchStartFrames[mi] !== undefined) {
+      const desired = matchStartFrames[mi]!;
+      if (desired > frame) frame = desired;
+    }
+
     // Swap: 5 frames. Positions swap; dragged piece gets a Y-dip peak.
     const swapStart = frame;
     const swapEnd = frame + FRAMES_SWAP;
@@ -331,6 +353,7 @@ export function buildBlenderExport(
     variantName: variant.name,
     fps,
     grid: { width, height },
+    layout: board.layout.map((row) => row.slice()),
     startFrame,
     endFrame,
     pieces: Array.from(pieces.values()).map((p) => ({

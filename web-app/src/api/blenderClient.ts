@@ -18,6 +18,21 @@ interface GameplayResponse {
   fps: number;
 }
 
+export interface SceneMarker {
+  /** Marker name as the user typed it in Blender ("1", "2", "intro", …). */
+  name: string;
+  /** Absolute scene frame this marker sits on. */
+  frame: number;
+}
+
+export interface MarkersResponse {
+  ok: boolean;
+  markers: SceneMarker[];
+  fps: number;
+  frameStart: number;
+  frameEnd: number;
+}
+
 const DEFAULT_PORT = 17654;
 
 function apiBase(): string {
@@ -94,6 +109,10 @@ async function request<T>(
 
 export async function pingBlender(): Promise<HealthResponse> {
   return request<HealthResponse>('/api/health', { method: 'GET' }, 5000);
+}
+
+export async function fetchSceneMarkers(): Promise<MarkersResponse> {
+  return request<MarkersResponse>('/api/markers', { method: 'GET' }, 5000);
 }
 
 export async function sendGameplayToBlender(

@@ -1,6 +1,8 @@
 """REST routes for the local HTTP API.
 
   GET  /api/health           — { ok, blenderVersion, blendFile, blendFileName }
+  GET  /api/markers          — { ok, markers: [{name, frame}], fps,
+                                 frameStart, frameEnd }
   POST /api/gameplay         — body: BlenderExport payload; builds or updates
                                 a gameplay variant collection in the scene.
 
@@ -83,6 +85,11 @@ def _handle_api(handler, method: str, path: str) -> None:
             _send_json(handler, 200, info)
             return
 
+        if method == "GET" and path == "/api/markers":
+            info = http_server.submit_to_main(_collect_markers)
+            _send_json(handler, 200, info)
+            return
+
         if method == "POST" and path == "/api/gameplay":
             payload = _read_json_body(handler)
             summary = http_server.submit_to_main(
@@ -108,6 +115,28 @@ def _collect_health() -> dict:
         "blenderVersion": bpy.app.version_string,
         "blendFile": blend_path,
         "blendFileName": os.path.basename(blend_path) if blend_path else "(unsaved)",
+    }
+
+
+def _collect_markers() -> dict:
+    """Snapshot of all timeline markers in the active scene.
+
+    Markers are returned in scene order plus an additional sort hint sorted
+    by frame so the client can pick whichever it needs. Each entry holds the
+    raw name; the client side parses numeric markers (\"1\", \"2\", …) when
+    sync-with-markers mode is active.
+    """
+    scene = bpy.context.scene
+    markers = []
+    for m in scene.timeline_markers:
+        markers.append({"name": m.name, "frame": int(m.frame)})
+    markers.sort(key=lambda x: x["frame"])
+    return {
+        "ok": True,
+        "markers": markers,
+        "fps": int(scene.render.fps / max(1.0, scene.render.fps_base)),
+        "frameStart": int(scene.frame_start),
+        "frameEnd": int(scene.frame_end),
     }
 
 

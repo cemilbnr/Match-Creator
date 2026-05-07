@@ -6,6 +6,89 @@ Format is loosely based on [Keep a Changelog](https://keepachangelog.com/) and
 the project follows semantic versioning once it hits 1.0. Pre-1.0 releases are
 beta and may ship breaking changes between minor bumps.
 
+## [0.3.2-beta] — 2026-05-07
+
+Sequencer / Generator quality-of-life pass plus a Blender-side timeline
+integration. No breaking changes to saved data; existing variants keep
+working unchanged.
+
+### Added
+- **Sequencer · Stop button.** The Play control flips to a red Stop while
+  a replay is running. Press it (or `Esc` / `Space`) to abort mid-sequence
+  — the board snaps back to the variant's starting layout instead of
+  having to wait the full duration.
+- **Sequencer · Sync matches with markers.** New toggle in the gear menu
+  (default ON). On Send / Update, the desktop app pulls the active
+  scene's timeline markers from Blender via the new `GET /api/markers`
+  endpoint, pairs markers named `"1"`, `"2"`, `"3"`… with each match in
+  order, and pads the export so swap N starts on marker N. When the
+  variant has more matches than numeric markers, a confirm dialog flags
+  it before sending. Markers earlier than the natural cumulative frame
+  are ignored — we never travel backwards in time.
+- **Sequencer · Edit board mode.** New `Edit board` button in the
+  sequencer header opens an in-place editor for the active variant. The
+  full BoardGenerator toolset (paint, edge `+/-`, marquee, clipboard,
+  rotate gizmo) is available; commit options are `✗ Cancel`,
+  `Save ▼` (`Save` overwrites the underlying board, `Save as new…`
+  forks a fresh board), and `✓ Save to variant`. `Ctrl+Enter` saves to
+  variant, `Esc` cancels. `GameplayVariant.layoutOverride` stores the
+  per-variant layout; the sequencer prefers it over `board.layout` when
+  loading.
+- **Sequencer · Variant comments dropdown.** Each variant card now has a
+  chevron handle that expands a textarea for free-form notes (status,
+  intent, palette rationale). A subtle blue dot tags variants that have
+  notes. Stored on `GameplayVariant.comment` (persisted to localStorage).
+- **Board Generator · 4-sided edge buttons.** Hovering the canvas
+  reveals `+` bands on every side. Click adds a row/col on that edge;
+  hold `Ctrl` to flip the icons to `−` and remove from that edge. Press-
+  and-hold accelerates for fast resizing.
+- **Board Generator · Marquee selection tool.** New `Select` tool
+  (`V` hotkey, `B` switches back to brush). Drag to define a region.
+  Floating toolbar above the marquee exposes Copy / Cut / Paste / Drop
+  / Delete. Click+drag *inside* an existing selection lifts the cells
+  into a floating layer that follows the cursor (Aseprite/Photoshop
+  semantics) — release to stamp, `Esc` to cancel and restore. Arrow keys
+  nudge the float by one cell. A circular **rotate gizmo** anchors above
+  the selection's top-right corner; click rotates the float (or the
+  selection in place when nothing's floating) 90° clockwise. `R` does
+  the same from the keyboard. `Ctrl+C/X/V` for clipboard ops, `Del` to
+  clear, `Enter` to drop a float.
+- **Board Generator · State persistence.** The in-progress board
+  (layout, name, dimensions, zoom) now lives in a Zustand store with
+  the `persist` middleware. Switching panels or restarting the app no
+  longer wipes an unsaved draft.
+- **Sequencer · Variant board override propagation.** The Blender export
+  now sends the variant's `layoutOverride` (when set) instead of the
+  underlying `board.layout`, so colour/gap edits saved on a variant
+  travel to Blender as the new structural skeleton.
+- **Blender add-on · `GET /api/markers`.** Returns
+  `{ ok, markers: [{ name, frame }], fps, frameStart, frameEnd }` for
+  the active scene's timeline markers, sorted by frame. Used by the
+  desktop app's marker-sync flow; safe to call from any consumer.
+
+### Changed
+- **Generator brush panel · Tool & Shortcuts.** Brush / Select tools
+  surface as a top-row segmented control. Shortcuts list is condensed
+  and each entry now sits in its own subtle pill so the section scans
+  as a stack of cards rather than a wall of text. Removed the
+  rotate-clipboard toolbar button — rotation is now the marquee's
+  on-canvas gizmo.
+- **`SaveSplitButton`** extracted to a shared component
+  (`src/components/SaveSplitButton.tsx`); both BoardGenerator and the
+  new VariantEditor consume it. Added `tone="secondary"` for the
+  variant editor's quieter "Save to library" button.
+- Sequencer's effective layout (board view + match thumbnails) now uses
+  the variant's `layoutOverride` dimensions when present so an edit
+  that changes the grid size renders correctly without restart.
+
+### Fixed
+- Replay cleanup on abort: `replayAborted` flag short-circuits the
+  RAF-driven `waitFrames` so animations stop within a frame instead of
+  riding out the remaining segments before exiting.
+- Marquee paste: `null` cells in the clipboard are treated as
+  transparent, so pasting an irregular shape doesn't punch holes
+  through the destination.
+
 ## [0.3.1-beta] — 2026-04-24
 
 Analyzer correctness, Library upgrade, and a full UI polish pass. No

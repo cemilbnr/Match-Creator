@@ -10,6 +10,8 @@ import {
   swapCells,
   type CascadeStep,
 } from '../features/gameplaySequencer/match';
+import { useBoardGenerator } from './boardGeneratorStore';
+import { useLibrary } from './libraryStore';
 import { useSettings } from './settingsStore';
 import { useVariants } from './variantsStore';
 
@@ -101,6 +103,17 @@ interface SequencerState {
   cascadeEnabled: boolean;
   activeVariantId: string | null;
   isReplaying: boolean;
+  /** Set by stopReplay(); the running replayActive() loop checks this between
+   *  steps and exits early when true. Reset to false at the start of each
+   *  replay so a fresh Play always runs the full sequence. */
+  replayAborted: boolean;
+
+  /**
+   * When non-null the sequencer is in "edit board" mode for this variant —
+   * the BoardGenerator's persistent state is hijacked to host the editor
+   * UI. commitEditVariant / cancelEditVariant restores the snapshot.
+   */
+  editingVariantId: string | null;
 
   // View
   cellSize: number;
@@ -122,6 +135,17 @@ interface SequencerState {
   setCascadeEnabled: (v: boolean) => void;
   setActiveVariantId: (id: string | null) => void;
   replayActiveVariant: () => void;
+  /** Cancels an in-flight replay. The loop exits at the next frame boundary. */
+  stopReplay: () => void;
+
+  /**
+   * Enter / exit "edit board" mode for the active variant. The board
+   * generator store is snapshotted on enter and restored on exit; commit
+   * also persists the edited layout onto the variant.
+   */
+  beginEditVariant: () => void;
+  commitEditVariant: () => void;
+  cancelEditVariant: () => void;
   /**
    * Continue-from-here: rewinds the playable grid to the state right after
    * the match at `matchIndex` of the active variant, then truncates every
@@ -180,7 +204,9 @@ function waitFrames(n: number): Promise<void> {
   const targetFrame = useSequencer.getState().frame + n;
   return new Promise((resolve) => {
     const unsub = useSequencer.subscribe((s) => {
-      if (s.frame >= targetFrame) {
+      // Abort-aware: if a replay was cancelled, resolve immediately so the
+      // outer loop can break instead of waiting for the full frame budget.
+      if ((s.isReplaying && s.replayAborted) || s.frame >= targetFrame) {
         unsub();
         resolve();
       }
@@ -473,11 +499,13 @@ async function replayActive(): Promise<void> {
   useSequencer.setState({
     animating: true,
     isReplaying: true,
+    replayAborted: false,
     selected: null,
     matched: new Set<string>(),
   });
 
   for (const match of variant.matches) {
+    if (useSequencer.getState().replayAborted) break;
     const initialGrid = match.initialGrid.map((r) => r.slice());
     useSequencer.setState({ grid: initialGrid });
     clearAllAnims();
@@ -543,8 +571,77 @@ async function replayActive(): Promise<void> {
     if (customPad > 0) await waitFrames(customPad);
   }
 
-  useSequencer.setState({ animating: false, isReplaying: false });
+  // Reset to a clean playable state. If we exited early from an abort,
+  // restore the original layout so the user can immediately replay or keep
+  // working without a half-cascaded board on screen.
+  const aborted = useSequencer.getState().replayAborted;
+  if (aborted) {
+    const { originalLayout } = useSequencer.getState();
+    if (originalLayout.length > 0) {
+      useSequencer.setState({ grid: initializeGrid(originalLayout) });
+    }
+  }
+  useSequencer.setState({
+    animating: false,
+    isReplaying: false,
+    replayAborted: false,
+    matched: new Set<string>(),
+  });
   clearAllAnims();
+}
+
+/**
+ * Subset of BoardGenerator state we need to round-trip through edit mode.
+ * Keeps the snapshot tight so persisting actions / store identity isn't
+ * accidentally swapped.
+ */
+interface EditorSnapshot {
+  boardId: string;
+  name: string;
+  width: number;
+  height: number;
+  layout: Cell[][];
+  cellSize: number;
+  tool: ReturnType<typeof useBoardGenerator.getState>['tool'];
+  selection: ReturnType<typeof useBoardGenerator.getState>['selection'];
+  floating: ReturnType<typeof useBoardGenerator.getState>['floating'];
+  clipboard: ReturnType<typeof useBoardGenerator.getState>['clipboard'];
+  savedAt: number | null;
+}
+
+let editorSnapshot: EditorSnapshot | null = null;
+
+function captureGeneratorSnapshot(): EditorSnapshot {
+  const s = useBoardGenerator.getState();
+  return {
+    boardId: s.boardId,
+    name: s.name,
+    width: s.width,
+    height: s.height,
+    layout: s.layout.map((r) => r.slice()),
+    cellSize: s.cellSize,
+    tool: s.tool,
+    selection: s.selection,
+    floating: s.floating,
+    clipboard: s.clipboard,
+    savedAt: s.savedAt,
+  };
+}
+
+function restoreGeneratorSnapshot(snap: EditorSnapshot): void {
+  useBoardGenerator.setState({
+    boardId: snap.boardId,
+    name: snap.name,
+    width: snap.width,
+    height: snap.height,
+    layout: snap.layout.map((r) => r.slice()),
+    cellSize: snap.cellSize,
+    tool: snap.tool,
+    selection: snap.selection,
+    floating: snap.floating,
+    clipboard: snap.clipboard,
+    savedAt: snap.savedAt,
+  });
 }
 
 export const useSequencer = create<SequencerState>((set, get) => ({
@@ -563,6 +660,8 @@ export const useSequencer = create<SequencerState>((set, get) => ({
   cascadeEnabled: false,
   activeVariantId: null,
   isReplaying: false,
+  replayAborted: false,
+  editingVariantId: null,
 
   cellSize: DEFAULT_CELL_SIZE,
   fps: DEFAULT_FPS,
@@ -629,6 +728,104 @@ export const useSequencer = create<SequencerState>((set, get) => ({
   setActiveVariantId: (id) => set({ activeVariantId: id }),
   replayActiveVariant: () => {
     void replayActive();
+  },
+  stopReplay: () => {
+    if (!get().isReplaying) return;
+    set({ replayAborted: true });
+  },
+
+  beginEditVariant: () => {
+    const s = get();
+    const variantId = s.activeVariantId;
+    if (!variantId || s.editingVariantId || s.animating) return;
+    const variant = useVariants
+      .getState()
+      .variants.find((v) => v.id === variantId);
+    if (!variant) return;
+    const board = useLibrary
+      .getState()
+      .boards.find((b) => b.id === s.boardId);
+    if (!board) return;
+
+    // Effective starting layout = variant override > board layout
+    const layout = (variant.layoutOverride ?? board.layout).map((r) =>
+      r.slice(),
+    );
+
+    // Snapshot the user's current generator state and load this variant's
+    // layout into the generator store.
+    editorSnapshot = captureGeneratorSnapshot();
+    useBoardGenerator.setState({
+      boardId: `editing:${variantId}`,
+      name: `${board.name} · ${variant.name}`,
+      width: layout[0]?.length ?? 0,
+      height: layout.length,
+      layout,
+      savedAt: null,
+      tool: 'paint',
+      selection: null,
+      floating: null,
+    });
+
+    set({ editingVariantId: variantId });
+  },
+
+  commitEditVariant: () => {
+    const s = get();
+    const variantId = s.editingVariantId;
+    if (!variantId || !editorSnapshot) return;
+    const variant = useVariants
+      .getState()
+      .variants.find((v) => v.id === variantId);
+    const editor = useBoardGenerator.getState();
+    // Commit any in-flight float so the user doesn't lose lifted cells.
+    if (editor.floating) editor.commitFloat();
+    const finalLayout = useBoardGenerator.getState().layout;
+
+    const dimsChanged =
+      !!variant &&
+      (finalLayout.length !== variant.layoutOverride?.length ||
+        finalLayout[0]?.length !==
+          (variant.layoutOverride?.[0]?.length ??
+            useLibrary
+              .getState()
+              .boards.find((b) => b.id === s.boardId)?.width ??
+            0));
+
+    let clearMatches = false;
+    if (variant && variant.matches.length > 0 && dimsChanged) {
+      clearMatches = window.confirm(
+        `Board dimensions changed and this variant has ${variant.matches.length} recorded match${
+          variant.matches.length === 1 ? '' : 'es'
+        }. Saving will clear them. Continue?`,
+      );
+      if (!clearMatches) {
+        // User backed out — keep them in edit mode.
+        return;
+      }
+    }
+
+    useVariants
+      .getState()
+      .setVariantLayoutOverride(variantId, finalLayout, { clearMatches });
+
+    restoreGeneratorSnapshot(editorSnapshot);
+    editorSnapshot = null;
+    set({ editingVariantId: null });
+
+    // Reload the playable grid from the new layout so the sequencer reflects
+    // the changes immediately.
+    get().loadBoard(finalLayout);
+  },
+
+  cancelEditVariant: () => {
+    if (!editorSnapshot) {
+      set({ editingVariantId: null });
+      return;
+    }
+    restoreGeneratorSnapshot(editorSnapshot);
+    editorSnapshot = null;
+    set({ editingVariantId: null });
   },
 
   continueFromMatch: (matchIndex) => {

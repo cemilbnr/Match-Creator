@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Cell } from '../types';
 import type { RecordedMatch } from './sequencerStore';
 
 export interface GameplayVariant {
@@ -9,6 +10,16 @@ export interface GameplayVariant {
   matches: RecordedMatch[];
   createdAt: number;
   updatedAt: number;
+  /** Free-form notes about the variant. Surfaced in the right rail behind a
+   *  collapsed dropdown so it doesn't bloat the card. Optional. */
+  comment?: string;
+  /**
+   * Variant-specific board layout. When present the sequencer uses this as
+   * the starting grid instead of the underlying board's layout. Set by the
+   * "Edit board" flow in the sequencer; absent for variants that share the
+   * board's original layout.
+   */
+  layoutOverride?: Cell[][];
 }
 
 interface VariantsState {
@@ -28,6 +39,18 @@ interface VariantsState {
   /** Sets customFrameLength on a match. Pass null to clear the override. */
   setMatchFrameLength: (id: string, index: number, frames: number | null) => void;
   renameVariant: (id: string, name: string) => void;
+  setVariantComment: (id: string, comment: string) => void;
+  /**
+   * Stores a variant-specific board layout. `clearMatches` is true when the
+   * board dimensions changed (or the user opted in via the confirm dialog),
+   * since previously recorded matches reference frozen initialGrids that no
+   * longer line up with the new layout.
+   */
+  setVariantLayoutOverride: (
+    id: string,
+    layout: Cell[][],
+    opts?: { clearMatches?: boolean },
+  ) => void;
   duplicateVariant: (id: string) => string | null;
   deleteVariant: (id: string) => void;
 }
@@ -167,6 +190,29 @@ export const useVariants = create<VariantsState>()(
           variants: state.variants.map((v) =>
             v.id === id ? { ...v, name, updatedAt: Date.now() } : v,
           ),
+        })),
+      setVariantComment: (id, comment) =>
+        set((state) => ({
+          variants: state.variants.map((v) =>
+            v.id === id
+              ? { ...v, comment, updatedAt: Date.now() }
+              : v,
+          ),
+        })),
+      setVariantLayoutOverride: (id, layout, opts) =>
+        set((state) => ({
+          variants: state.variants.map((v) => {
+            if (v.id !== id) return v;
+            const next: GameplayVariant = {
+              ...v,
+              layoutOverride: layout.map((r) => r.slice()),
+              updatedAt: Date.now(),
+            };
+            if (opts?.clearMatches) {
+              next.matches = [];
+            }
+            return next;
+          }),
         })),
       duplicateVariant: (id) => {
         const src = get().variants.find((v) => v.id === id);

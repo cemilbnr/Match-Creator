@@ -15,6 +15,10 @@ export function SequencerSettingsMenu() {
   const setShowMatchPreview = useSettings((s) => s.setShowMatchPreview);
   const defaultMatchFrames = useSettings((s) => s.defaultMatchFrames);
   const setDefaultMatchFrames = useSettings((s) => s.setDefaultMatchFrames);
+  const syncMatchesWithMarkers = useSettings((s) => s.syncMatchesWithMarkers);
+  const setSyncMatchesWithMarkers = useSettings(
+    (s) => s.setSyncMatchesWithMarkers,
+  );
   const cascadeEnabled = useSequencer((s) => s.cascadeEnabled);
   const setCascadeEnabled = useSequencer((s) => s.setCascadeEnabled);
 
@@ -110,6 +114,18 @@ export function SequencerSettingsMenu() {
               <span className="text-[11px] text-neutral-500">f</span>
             </div>
           </div>
+
+          <div className="my-3 h-px bg-neutral-800" />
+
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+            Blender export
+          </div>
+          <Toggle
+            label="Sync matches with markers"
+            description='Pin each match to the scene marker named "1", "2", "3"… Warns when there are fewer markers than matches.'
+            checked={syncMatchesWithMarkers}
+            onChange={setSyncMatchesWithMarkers}
+          />
 
           <div className="my-3 h-px bg-neutral-800" />
 

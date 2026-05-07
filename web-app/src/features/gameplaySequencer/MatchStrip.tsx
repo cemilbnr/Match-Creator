@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react';
-import { sendGameplayToBlender } from '../../api/blenderClient';
+import {
+  fetchSceneMarkers,
+  sendGameplayToBlender,
+  type SceneMarker,
+} from '../../api/blenderClient';
 import { BoardThumbnail } from '../../components/BoardThumbnail';
 import {
   ClockIcon,
@@ -7,6 +11,7 @@ import {
   PlayIcon,
   RefreshIcon,
   SendIcon,
+  StopIcon,
   TrashIcon,
 } from '../../components/icons';
 import { Button, IconButton } from '../../components/ui';
@@ -31,6 +36,7 @@ export function MatchStrip() {
   const animating = useSequencer((s) => s.animating);
   const isReplaying = useSequencer((s) => s.isReplaying);
   const replay = useSequencer((s) => s.replayActiveVariant);
+  const stopReplay = useSequencer((s) => s.stopReplay);
   const continueFromMatch = useSequencer((s) => s.continueFromMatch);
   const fps = useSequencer((s) => s.fps);
 
@@ -41,6 +47,7 @@ export function MatchStrip() {
   const setMatchFrameLength = useVariants((s) => s.setMatchFrameLength);
 
   const showMatchPreview = useSettings((s) => s.showMatchPreview);
+  const syncMatchesWithMarkers = useSettings((s) => s.syncMatchesWithMarkers);
 
   const board = useMemo(
     () => boards.find((b) => b.id === boardId) ?? null,
@@ -50,6 +57,22 @@ export function MatchStrip() {
     () => variants.find((v) => v.id === activeVariantId) ?? null,
     [variants, activeVariantId],
   );
+  /**
+   * Effective board for export: a variant's `layoutOverride` swaps in for
+   * the underlying board's layout/dimensions so Blender receives the
+   * variant-specific skeleton (gap pattern + colour palette).
+   */
+  const effectiveBoard = useMemo(() => {
+    if (!board) return null;
+    const override = activeVariant?.layoutOverride;
+    if (!override) return board;
+    return {
+      ...board,
+      layout: override,
+      width: override[0]?.length ?? board.width,
+      height: override.length,
+    };
+  }, [board, activeVariant]);
 
   const matches = activeVariant?.matches ?? [];
   const canReplay = matches.length > 0 && !animating;
@@ -76,11 +99,91 @@ export function MatchStrip() {
         ? 'Record at least one swap first.'
         : null;
 
+  /**
+   * If marker-sync is on, pull the scene's timeline markers, pair them with
+   * matches by numeric name ("1" → match[0], "2" → match[1], …), and return
+   * the absolute start frames. Markers without a numeric name are ignored
+   * but listed in `extra`. When matches > numeric markers we surface a
+   * confirm dialog and let the user proceed (filling unmatched matches with
+   * natural sequencing) or abort.
+   *
+   * Returns null when the user cancelled, or { frames: undefined } when
+   * sync is off / no markers were found (caller should then use natural
+   * sequencing).
+   */
+  const resolveMarkerStartFrames = async (
+    matchCount: number,
+  ): Promise<{ frames: number[] | undefined } | null> => {
+    if (!syncMatchesWithMarkers) return { frames: undefined };
+    let markers: SceneMarker[] = [];
+    try {
+      const res = await fetchSceneMarkers();
+      markers = res.markers;
+    } catch (err) {
+      const proceed = window.confirm(
+        `Couldn't read timeline markers from Blender (${
+          (err as Error).message || 'unknown error'
+        }).\n\nProceed without marker sync?`,
+      );
+      return proceed ? { frames: undefined } : null;
+    }
+
+    // Pair markers by numeric name. Non-numeric markers are kept around for
+    // diagnostic messaging but don't participate in pairing.
+    const numericByIndex = new Map<number, number>();
+    for (const m of markers) {
+      const n = Number(m.name.trim());
+      if (Number.isFinite(n) && Number.isInteger(n) && n >= 1) {
+        // First marker named "1" wins if duplicates exist (matches Blender
+        // behaviour where two markers with the same name are unusual).
+        if (!numericByIndex.has(n)) numericByIndex.set(n, m.frame);
+      }
+    }
+
+    if (numericByIndex.size === 0) {
+      const proceed = window.confirm(
+        'Sync-with-markers is on but the scene has no markers named "1", "2", "3"…\n\nSend without marker sync?',
+      );
+      return proceed ? { frames: undefined } : null;
+    }
+
+    if (matchCount > numericByIndex.size) {
+      const proceed = window.confirm(
+        `Variant has ${matchCount} matches but the scene only has ${numericByIndex.size} numeric marker${
+          numericByIndex.size === 1 ? '' : 's'
+        } (1…${numericByIndex.size}).\n\nSend anyway? Extra matches will sequence naturally after the last marker.`,
+      );
+      if (!proceed) return null;
+    }
+
+    const frames: number[] = [];
+    for (let i = 0; i < matchCount; i++) {
+      const f = numericByIndex.get(i + 1);
+      // Sentinel large number is awkward; instead, leave undefined entries
+      // and let the export builder fall through to natural pacing.
+      if (f !== undefined) frames[i] = f;
+    }
+    return { frames };
+  };
+
   const dispatchBlender = async (mode: BlenderExportMode) => {
-    if (!activeVariant || !board) return;
+    if (!activeVariant || !effectiveBoard) return;
     setBlenderStatus({ kind: 'sending', mode });
     try {
-      const payload = buildBlenderExport(board, activeVariant, fps, mode);
+      const resolved = await resolveMarkerStartFrames(matches.length);
+      if (resolved === null) {
+        // User cancelled (warning dialog).
+        setBlenderStatus({ kind: 'idle' });
+        return;
+      }
+      const payload = buildBlenderExport(
+        effectiveBoard,
+        activeVariant,
+        fps,
+        mode,
+        1,
+        resolved.frames,
+      );
       const res = await sendGameplayToBlender(payload);
       setBlenderStatus({
         kind: 'ok',
@@ -170,19 +273,27 @@ export function MatchStrip() {
         </div>
 
         <div className="flex items-center gap-2">
-          <IconButton
-            onClick={replay}
-            disabled={!canReplay}
-            title={
-              isReplaying
-                ? 'Replaying…'
-                : matches.length === 0
+          {isReplaying ? (
+            <IconButton
+              onClick={stopReplay}
+              tone="danger"
+              title="Stop replay (Esc / Space)"
+            >
+              <StopIcon />
+            </IconButton>
+          ) : (
+            <IconButton
+              onClick={replay}
+              disabled={!canReplay}
+              title={
+                matches.length === 0
                   ? 'Record a swap first (Space)'
                   : 'Replay the active variant (Space)'
-            }
-          >
-            <PlayIcon />
-          </IconButton>
+              }
+            >
+              <PlayIcon />
+            </IconButton>
+          )}
           <Button
             size="sm"
             variant="secondary"
@@ -231,7 +342,7 @@ export function MatchStrip() {
             {matches.map((match, i) => (
               <li key={match.id}>
                 <MatchCard
-                  board={board}
+                  board={effectiveBoard}
                   match={match}
                   index={i}
                   showPreview={showMatchPreview}
