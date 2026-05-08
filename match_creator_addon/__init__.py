@@ -1,20 +1,27 @@
-# --- Version (single source of truth) ---------------------------------------
-# Tracks the Match Creator desktop app's version one-to-one. Bumped together
-# in every release. The tuple is what Blender's addon manager parses; the
-# string is what the auto-updater displays + matches against the GitHub
-# release manifest.
-ADDON_VERSION_TUPLE = (0, 3, 3)
-ADDON_VERSION_STRING = "0.3.3-beta"
-
+# --- bl_info (must be a pure literal dict) -----------------------------------
+# Blender scans installed addons by AST-parsing this file and running
+# `ast.literal_eval` on the `bl_info` value WITHOUT executing the module.
+# Name references inside the dict (e.g. `"version": ADDON_VERSION_TUPLE`)
+# make literal_eval choke and the scanner silently skips the addon —
+# Install-from-Disk then reports `Modules Installed ()` with empty parens.
+# KEEP EVERY VALUE A LITERAL.
 bl_info = {
     "name": "Match-3 Animator",
-    "author": "cEMİL",
-    "version": ADDON_VERSION_TUPLE,
+    "author": "cEMIL",
+    "version": (0, 3, 3),
     "blender": (4, 2, 0),
     "location": "3D View Header + N-Panel > Match-3",
     "description": "Receives match-3 gameplay variants from the Match Creator desktop app and animates them.",
     "category": "Animation",
 }
+
+# --- Version constants (single source of truth at runtime) -------------------
+# Track the Match Creator desktop app's version one-to-one. Bumped together
+# in every release. ADDON_VERSION_TUPLE re-reads bl_info so we only edit the
+# literal in one place; ADDON_VERSION_STRING carries the `-beta` suffix that
+# Blender's tuple-only `version` field can't represent.
+ADDON_VERSION_TUPLE = bl_info["version"]
+ADDON_VERSION_STRING = "0.3.3-beta"
 
 import bpy
 
