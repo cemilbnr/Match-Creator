@@ -8,7 +8,7 @@
 
 Two components talk over a local HTTP server:
 
-1. **Blender Add-on** (`blender-addon/`) — Runs a background HTTP server. Exposes a panel with "Open Editor" button. Serves the web app's static files AND the REST API. Rebuilds scene + animation from JSON on every update.
+1. **Blender Add-on** (`match_creator_addon/`) — Runs a background HTTP server. Exposes a panel with "Open Editor" button. Serves the web app's static files AND the REST API. Rebuilds scene + animation from JSON on every update.
 2. **Web App** (`web-app/`) — React + TypeScript + Vite. Two main panels: Board Designer (grid/piece editor) and Timeline Editor (gameplay sequence). Talks to Blender via REST.
 
 **Single source of truth:** a `Project` JSON per board. Blender keyframes are derivative — regenerated from events on every sync. This is what makes the workflow non-destructive.
@@ -40,7 +40,7 @@ match3-animator/
 ├── README.md
 ├── ARCHITECTURE.md                         ← this file
 │
-├── blender-addon/
+├── match_creator_addon/
 │   ├── __init__.py                         ← bl_info + register/unregister
 │   ├── preferences.py                      ← port, autostart server, asset paths
 │   ├── ui/
@@ -489,7 +489,7 @@ export default defineConfig({
 });
 ```
 
-Build output (`web-app/dist/`) gets copied to `blender-addon/vendor/webapp/` as part of the packaging script. During development, you run Vite dev server and Blender in parallel.
+Build output (`web-app/dist/`) gets copied to `match_creator_addon/vendor/webapp/` as part of the packaging script. During development, you run Vite dev server and Blender in parallel.
 
 ---
 
@@ -571,8 +571,8 @@ Keep external dependencies near zero on the Blender side so installation is drag
 One script: `package.sh` (or `.py`):
 
 1. `cd web-app && npm run build`
-2. `rm -rf ../blender-addon/vendor/webapp && cp -r dist ../blender-addon/vendor/webapp`
-3. `cd ../blender-addon && zip -r ../match3-animator-v1.0.0.zip .`
+2. `rm -rf ../match_creator_addon/vendor/webapp && cp -r dist ../match_creator_addon/vendor/webapp`
+3. `cd ../match_creator_addon && zip -r ../match3-animator-v1.0.0.zip .`
 
 User installs via Blender Preferences → Add-ons → Install → pick the zip.
 

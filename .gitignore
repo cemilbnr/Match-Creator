@@ -49,5 +49,5 @@ releases/
 # --- Dev sandbox copies (canonical frontend lives at web-app/) ---
 Match_Creator_Frontend/
 
-# --- Asset source folders (canonical asset lives at blender-addon/assets/) ---
+# --- Asset source folders (canonical asset lives at match_creator_addon/assets/) ---
 blender_default_asset/

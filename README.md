@@ -71,8 +71,9 @@ as an animated collection.
 
 ### Blender add-on
 
-1. Zip the `blender-addon/` folder (or use `blender-addon.zip` at the
-   repo root).
+1. Grab `match-creator-addon-<version>-beta.zip` from the latest
+   [Release](https://github.com/cemilbnr/Match-Creator/releases/latest)
+   (or zip the `match_creator_addon/` folder yourself).
 2. In Blender: **Preferences → Add-ons → Install** → pick the zip →
    enable *Match Creator Bridge*.
 3. Open the 3D viewport's N-panel → **Match-3** tab → **Start Server**.
@@ -175,7 +176,9 @@ MATCH_CREATOR/
 ├── web-app/            Tauri desktop app (React + Vite + TypeScript)
 │   ├── src/            UI + stores + features
 │   └── src-tauri/      Rust shell, Tauri config, updater keys
-├── blender-addon/      Python add-on loaded by Blender
+├── match_creator_addon/  Python add-on loaded by Blender (folder name is the
+│                         Python module — keep the underscore for the addon
+│                         loader to find it)
 ├── assets/             Tile PNGs served to the web app
 ├── docs/               Architecture, asset spec, release flow
 ├── releases/           Per-version build artifacts (ignored by Git)

@@ -26,7 +26,7 @@ addon can pull its own updates without manual zip dragging.
   current install (Blender restart still required because Python
   doesn't reliably reload registered classes / properties).
 - **Single source of truth for versioning.** `ADDON_VERSION_TUPLE` and
-  `ADDON_VERSION_STRING` constants in `blender-addon/__init__.py` track
+  `ADDON_VERSION_STRING` constants in `match_creator_addon/__init__.py` track
   the desktop app's version one-to-one. v0.3.3-beta is the first joint
   release; future releases bump both together.
 - **Addon preference: `Swap dip (Y)`.** New FloatProperty in the
@@ -37,7 +37,7 @@ addon can pull its own updates without manual zip dragging.
   depth (and direction) is tunable from Blender preferences without
   touching the desktop app. Set to `0` for a flat swap.
 - **Bundled `MC_Assets.blend`** ships inside the addon at
-  `blender-addon/assets/MC_Assets.blend` (carried over from 0.3.2's
+  `match_creator_addon/assets/MC_Assets.blend` (carried over from 0.3.2's
   trailing updates). Fresh installs use it automatically; the
   preferences panel exposes a `Use custom asset set` toggle that gates
   the existing `Custom asset .blend` path field. `effective_asset_blend()`

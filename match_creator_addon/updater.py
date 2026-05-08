@@ -20,8 +20,10 @@ Manifest schema (`addon-latest.json`):
     }
 
 The zip layout is expected to be a single top-level folder
-`blender-addon/` containing the addon source. Anything else gets
-extracted as-is — keep the zip clean.
+`match_creator_addon/` containing the addon source. The folder name
+must be a valid Python identifier (no hyphens) so Blender's
+Install-from-Disk path can register it. Anything else gets extracted
+as-is — keep the zip clean.
 
 Network access uses `urllib.request` from the stdlib; no third-party
 dependencies. Runs in foreground for now (the operations are short).
@@ -52,8 +54,9 @@ RELEASES_PAGE_URL = "https://github.com/cemilbnr/Match-Creator/releases"
 
 # Top-level folder name we expect inside the release zip. Must match the
 # installed addon module name so `bpy.ops.preferences.addon_disable(module=…)`
-# keeps working across the swap.
-EXPECTED_ROOT_NAME = "blender-addon"
+# keeps working across the swap. Underscored — hyphens make Blender's
+# Install-from-Disk silently swallow the package.
+EXPECTED_ROOT_NAME = "match_creator_addon"
 
 # Network deadline. Manifest is ~1 KB; zip is ~150 KB today. Both finish
 # well under this on any reasonable connection.
@@ -187,9 +190,9 @@ def _extract_zip_into_addons(zip_path: str) -> None:
     """Replace the addon's files with the contents of the downloaded zip.
 
     Layout assumption: zip contains a single top-level folder named
-    `blender-addon/`. We extract into the *parent* of the current addon
-    install location, which is the addons directory Blender reads from.
-    Existing files are overwritten by `extractall` so updates land
+    `match_creator_addon/`. We extract into the *parent* of the current
+    addon install location, which is the addons directory Blender reads
+    from. Existing files are overwritten by `extractall` so updates land
     cleanly.
     """
     addon_root = _addon_install_root()
@@ -198,8 +201,8 @@ def _extract_zip_into_addons(zip_path: str) -> None:
         raise RuntimeError(f"Addons directory not found: {addons_dir}")
 
     with zipfile.ZipFile(zip_path) as zf:
-        # Sanity check: top-level entry must be EXPECTED_ROOT_NAME or a file
-        # directly named blender-addon/something.
+        # Sanity check: top-level entry must be EXPECTED_ROOT_NAME (a file
+        # directly named match_creator_addon/something).
         roots = {n.split("/", 1)[0] for n in zf.namelist() if n.strip()}
         if EXPECTED_ROOT_NAME not in roots:
             raise RuntimeError(
