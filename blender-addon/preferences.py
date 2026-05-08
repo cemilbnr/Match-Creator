@@ -1,7 +1,7 @@
 import os
 
 import bpy
-from bpy.props import IntProperty, StringProperty, BoolProperty
+from bpy.props import BoolProperty, FloatProperty, IntProperty, StringProperty
 
 
 # Bundled default asset shipped inside the addon. Resolved relative to this
@@ -39,6 +39,32 @@ class Match3Preferences(bpy.types.AddonPreferences):
         name="Autostart server on addon load",
         description="If enabled, the HTTP server starts automatically when Blender loads.",
         default=False,
+    )
+
+    # ---- Animation tuning ---------------------------------------------------
+    # Swap dip = the Y-axis offset the dragged tile travels to during a swap.
+    # Negative values draw the tile toward the standard Blender front-view
+    # camera (which sits on the −Y side), making it pass *over* its partner
+    # during the cross. The export sends a non-zero `dip` flag for swap
+    # keyframes; the addon substitutes this preference value at write time so
+    # the user can tune the arc depth without re-exporting from the desktop
+    # app. Set to 0.0 to disable the dip entirely (flat swap).
+
+    swap_dip_y: FloatProperty(
+        name="Swap dip (Y)",
+        description=(
+            "Y-axis offset applied to the dragged tile at the peak of a swap. "
+            "Negative values lift the tile toward the −Y front-view camera "
+            "so it draws on top of its partner during the cross. Set to 0 "
+            "for a flat swap with no arc."
+        ),
+        default=-0.14,
+        min=-1.0,
+        max=1.0,
+        soft_min=-0.5,
+        soft_max=0.5,
+        step=1,
+        precision=3,
     )
 
     # ---- Asset set ----------------------------------------------------------
@@ -105,6 +131,17 @@ class Match3Preferences(bpy.types.AddonPreferences):
         col.prop(self, "default_fps")
         col.prop(self, "autostart_server")
 
+        # Animation tuning group — visually distinct so the dip control
+        # doesn't get lost between server and asset settings.
+        anim_box = layout.box()
+        anim_box.label(text="Animation", icon='ANIM')
+        anim_box.prop(self, "swap_dip_y")
+
+        # Updates panel — version display + check / install actions. Mirrors
+        # the desktop app's "Check for updates" UI so the addon stays in
+        # lockstep with Match Creator without manual zip dragging.
+        self._draw_updates(layout)
+
         # Asset set group — toggle gates the path field so it's obvious that
         # the bundled asset is the default.
         box = layout.box()
@@ -122,6 +159,84 @@ class Match3Preferences(bpy.types.AddonPreferences):
             row.label(text=f"Using bundled: {label}", icon='CHECKMARK' if os.path.isfile(bundled) else 'ERROR')
 
         layout.prop(self, "app_path")
+
+    # ---- Updates panel ------------------------------------------------------
+
+    def _draw_updates(self, layout) -> None:
+        """Render the addon-updater UI. State lives on the `updater` module
+        (process-scoped). Status icons + messaging mirror the desktop app's
+        update banner so a user familiar with one feels at home in the
+        other."""
+        # Lazy import: avoids a circular import at module load time when the
+        # addon is partially registered.
+        from . import ADDON_VERSION_STRING, updater  # type: ignore
+
+        box = layout.box()
+        row = box.row()
+        row.label(text="Updates", icon='URL')
+        row.label(text=f"Installed: {ADDON_VERSION_STRING}")
+
+        st = updater.state
+
+        # Status row — colour + icon hint at the kind of feedback. Empty
+        # message = idle; we still draw the row so the layout doesn't jump.
+        if st.status == "checking" or st.status == "downloading":
+            box.label(text=st.message or "Working…", icon='SORTTIME')
+        elif st.status == "available":
+            avail = st.available_version or "?"
+            box.label(text=f"Update available: {avail}", icon='IMPORT')
+            if st.available_notes:
+                # Wrap long release notes by drawing into a sub-column with
+                # the parent's full width — Blender does the wrap automatically.
+                sub = box.column()
+                sub.scale_y = 0.85
+                for line in _wrap_lines(st.available_notes, width=78):
+                    sub.label(text=line)
+        elif st.status == "up_to_date":
+            box.label(text=st.message or "You're on the latest version.", icon='CHECKMARK')
+        elif st.status == "installed":
+            box.label(text=st.message or "Installed. Restart Blender.", icon='FILE_REFRESH')
+        elif st.status == "error":
+            box.label(text=st.message or "Update check failed.", icon='ERROR')
+        else:
+            box.label(text="No update check yet.", icon='QUESTION')
+
+        # Action row — Check is always available; Install only when staged.
+        actions = box.row(align=True)
+        actions.operator("match3.check_updates", icon='FILE_REFRESH')
+        op_install = actions.operator("match3.install_update", icon='IMPORT')
+        # Disable the install button if we're not actually staged.
+        if st.status != "available":
+            actions.enabled = True  # leave Check enabled
+            # Greying just the install op requires splitting the row; keep
+            # this simple — the operator's poll() short-circuits actual
+            # invocation, and Blender renders it as disabled automatically.
+            del op_install
+        actions.operator("match3.open_releases_page", icon='URL')
+
+        if st.last_check:
+            footer = box.row()
+            footer.enabled = False
+            footer.label(text=f"Last checked: {st.last_check}")
+
+
+def _wrap_lines(text: str, width: int = 80) -> list[str]:
+    """Tiny word-wrapper used by the release-notes display. Blender's
+    layout doesn't wrap labels, so we split here. Strips obvious noise
+    (`\\n`, double spaces) on the way through."""
+    if not text:
+        return []
+    flat = " ".join(text.split())
+    out: list[str] = []
+    while len(flat) > width:
+        cut = flat.rfind(" ", 0, width)
+        if cut <= 0:
+            cut = width
+        out.append(flat[:cut].rstrip())
+        flat = flat[cut:].lstrip()
+    if flat:
+        out.append(flat)
+    return out
 
 
 def get(context=None) -> "Match3Preferences":

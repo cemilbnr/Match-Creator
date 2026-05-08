@@ -1,7 +1,15 @@
+# --- Version (single source of truth) ---------------------------------------
+# Tracks the Match Creator desktop app's version one-to-one. Bumped together
+# in every release. The tuple is what Blender's addon manager parses; the
+# string is what the auto-updater displays + matches against the GitHub
+# release manifest.
+ADDON_VERSION_TUPLE = (0, 3, 3)
+ADDON_VERSION_STRING = "0.3.3-beta"
+
 bl_info = {
     "name": "Match-3 Animator",
     "author": "cEMİL",
-    "version": (0, 2, 0),
+    "version": ADDON_VERSION_TUPLE,
     "blender": (4, 2, 0),
     "location": "3D View Header + N-Panel > Match-3",
     "description": "Receives match-3 gameplay variants from the Match Creator desktop app and animates them.",
@@ -10,7 +18,7 @@ bl_info = {
 
 import bpy
 
-from . import preferences
+from . import preferences, updater
 from .ui import panel
 from .operators import server_ops
 
@@ -19,6 +27,9 @@ _classes = (
     server_ops.MATCH3_OT_start_server,
     server_ops.MATCH3_OT_stop_server,
     server_ops.MATCH3_OT_launch_creator,
+    updater.MATCH3_OT_check_updates,
+    updater.MATCH3_OT_install_update,
+    updater.MATCH3_OT_open_releases_page,
     panel.MATCH3_PT_main_panel,
 )
 

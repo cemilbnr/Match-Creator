@@ -134,45 +134,65 @@ export function buildBlenderExport(
       if (desired > frame) frame = desired;
     }
 
-    // Swap: 5 frames. Positions swap; dragged piece gets a Y-dip peak.
+    // Swap: 5 frames. Both pieces translate in lock-step over the full
+    // window — the dragged piece (`from`) gets an additional Y-dip pulse on
+    // top so it visually arcs above the partner. Intermediate keyframes
+    // for the dip use LERPED positions on (row, col) so the location curve
+    // stays straight even with LINEAR interpolation set by the addon.
+    // Without this, the addon's keyframe pass-through would freeze the
+    // from-piece at its origin for one frame and at the destination for
+    // one frame, making the to-piece visually start moving FIRST — which
+    // reads as "the wrong tile got grabbed".
+    //
+    // Dip is **-0.14** (negative Y). The standard Blender front view has
+    // the camera on the −Y side looking toward +Y, so negative Y values
+    // sit CLOSER to the camera. Pushing the dragged piece into −Y therefore
+    // makes it draw on TOP of its partner during the cross, which is what
+    // the player sees in mobile match-3 polish: the held tile arcs over
+    // the destination and snaps into place. The addon forwards the value
+    // straight through (`tile.location = (x, dip, z)`) so the schema
+    // doubles as the literal Y offset.
     const swapStart = frame;
     const swapEnd = frame + FRAMES_SWAP;
     const fromId = ids[match.swap.from.row]?.[match.swap.from.col] ?? null;
     const toId = ids[match.swap.to.row]?.[match.swap.to.col] ?? null;
 
     if (fromId && toId) {
-      const from = pieces.get(fromId)!;
-      const to = pieces.get(toId)!;
+      const fromPiece = pieces.get(fromId)!;
+      const toPiece = pieces.get(toId)!;
 
-      // Start keyframes at swap start (hold current position)
-      pushKf(from, { frame: swapStart, row: from.row, col: from.col, scale: 1, dip: 0 });
-      pushKf(to, { frame: swapStart, row: to.row, col: to.col, scale: 1, dip: 0 });
+      const fromR = fromPiece.row;
+      const fromC = fromPiece.col;
+      const toR = match.swap.to.row;
+      const toC = match.swap.to.col;
+      const t1 = 1 / FRAMES_SWAP;
+      const tN = (FRAMES_SWAP - 1) / FRAMES_SWAP;
 
-      // Dip peak on the dragged piece (`from`), matching BlastAnimator_01
-      pushKf(from, {
+      // FROM piece: 4 keyframes spanning the full window. Middle two carry
+      // the dip and sit ON the linear interpolation line so X/Z stay
+      // uniform.
+      pushKf(fromPiece, { frame: swapStart, row: fromR, col: fromC, scale: 1, dip: 0 });
+      pushKf(fromPiece, {
         frame: swapStart + 1,
-        row: from.row,
-        col: from.col,
+        row: fromR + t1 * (toR - fromR),
+        col: fromC + t1 * (toC - fromC),
         scale: 1,
         dip: -0.14,
       });
-      pushKf(from, {
+      pushKf(fromPiece, {
         frame: swapEnd - 1,
-        row: match.swap.to.row,
-        col: match.swap.to.col,
+        row: fromR + tN * (toR - fromR),
+        col: fromC + tN * (toC - fromC),
         scale: 1,
         dip: -0.14,
       });
+      pushKf(fromPiece, { frame: swapEnd, row: toR, col: toC, scale: 1, dip: 0 });
 
-      // End of swap: pieces at new positions, dip returns to 0
-      pushKf(from, {
-        frame: swapEnd,
-        row: match.swap.to.row,
-        col: match.swap.to.col,
-        scale: 1,
-        dip: 0,
-      });
-      pushKf(to, {
+      // TO piece: just the two endpoint keys — with LINEAR interpolation in
+      // the addon, X/Z move uniformly across the same 5-frame window as
+      // the FROM piece. Both pieces start and finish in lock-step.
+      pushKf(toPiece, { frame: swapStart, row: toPiece.row, col: toPiece.col, scale: 1, dip: 0 });
+      pushKf(toPiece, {
         frame: swapEnd,
         row: match.swap.from.row,
         col: match.swap.from.col,
@@ -181,17 +201,27 @@ export function buildBlenderExport(
       });
 
       if (match.kind === 'fail') {
-        // Invalid swap: pieces go back to their original cells over the next
-        // 5 frames. Don't mutate ids/piece positions — nothing actually moved.
+        // Invalid swap: 5 frames out + 5 frames bounce back, FROM piece
+        // keeps its dip on the way out only. The bounce uses the same
+        // 4-key lerp pattern (no dip on return) so it mirrors the
+        // outbound timing exactly.
         const bounceEnd = swapEnd + FRAMES_SWAP;
-        pushKf(from, {
-          frame: bounceEnd,
-          row: match.swap.from.row,
-          col: match.swap.from.col,
+        pushKf(fromPiece, {
+          frame: swapEnd + 1,
+          row: toR + t1 * (fromR - toR),
+          col: toC + t1 * (fromC - toC),
           scale: 1,
           dip: 0,
         });
-        pushKf(to, {
+        pushKf(fromPiece, {
+          frame: bounceEnd - 1,
+          row: toR + tN * (fromR - toR),
+          col: toC + tN * (fromC - toC),
+          scale: 1,
+          dip: 0,
+        });
+        pushKf(fromPiece, { frame: bounceEnd, row: fromR, col: fromC, scale: 1, dip: 0 });
+        pushKf(toPiece, {
           frame: bounceEnd,
           row: match.swap.to.row,
           col: match.swap.to.col,
@@ -209,10 +239,10 @@ export function buildBlenderExport(
       // Update id grid + piece positions
       ids[match.swap.from.row]![match.swap.from.col] = toId;
       ids[match.swap.to.row]![match.swap.to.col] = fromId;
-      from.row = match.swap.to.row;
-      from.col = match.swap.to.col;
-      to.row = match.swap.from.row;
-      to.col = match.swap.from.col;
+      fromPiece.row = match.swap.to.row;
+      fromPiece.col = match.swap.to.col;
+      toPiece.row = match.swap.from.row;
+      toPiece.col = match.swap.from.col;
     }
 
     frame = swapEnd;

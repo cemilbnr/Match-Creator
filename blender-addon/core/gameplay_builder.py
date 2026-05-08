@@ -351,22 +351,82 @@ def _parent_to_ctrl(child: bpy.types.Object, ctrl: bpy.types.Object) -> None:
 
 # ---------- Keyframe application ----------
 
+class _LinearKeyframeContext:
+    """Context manager that forces every `keyframe_insert` call inside the
+    `with` block to use LINEAR interpolation.
+
+    Match-3 swaps and falls are on rails — Bezier easing per keyframe
+    distorts the lock-step timing the export carefully sets up (FROM and
+    TO pieces share the same 5-frame swap window, so they MUST travel at
+    the same rate to look believable). The export also emits LERPED
+    intermediate (row, col) keys that only land on a clean straight
+    line under LINEAR interpolation.
+
+    Implementation: we flip Blender's user-pref default keyframe
+    interpolation type (`keyframe_new_interpolation_type`) for the
+    duration of the build, then restore it. This avoids the
+    Blender-version-specific F-curve graph traversal — `Action.fcurves`
+    doesn't exist on slotted actions in Blender 4.4+ / 5.0, so the old
+    "iterate fcurves and set interpolation" pattern breaks.
+    """
+
+    def __init__(self):
+        self._prev: Optional[str] = None
+        self._prefs = None
+
+    def __enter__(self):
+        try:
+            self._prefs = bpy.context.preferences.edit
+            self._prev = self._prefs.keyframe_new_interpolation_type
+            self._prefs.keyframe_new_interpolation_type = 'LINEAR'
+        except Exception:  # noqa: BLE001 — fall back to default interpolation
+            self._prefs = None
+            self._prev = None
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._prefs is not None and self._prev is not None:
+            try:
+                self._prefs.keyframe_new_interpolation_type = self._prev
+            except Exception:  # noqa: BLE001
+                pass
+        # Don't suppress exceptions.
+        return False
+
+
+_DIP_EPSILON = 1e-6
+
+
 def _keyframe_tile(
     tile: bpy.types.Object,
     keyframes: list[dict],
     width: int,
     height: int,
+    dip_amount: float,
 ) -> None:
-    """Tiles get full animation: location (X/Z swap+fall, Y dip) + scale."""
+    """Tiles get full animation: location (X/Z swap+fall, Y dip) + scale.
+
+    Y-axis convention + customisation: the export sets `dip` to a non-zero
+    sentinel on swap-arc keyframes (−0.14 by historic default). The addon
+    treats any non-zero `dip` as "apply the user's configured dip amount
+    here" and writes `tile.location.y = dip_amount`. Zero `dip` keys keep
+    Y at 0. This way the user controls the arc depth (and direction) from
+    addon preferences without ever touching the desktop app.
+
+    Default `dip_amount` is −0.14, matching the historic export value.
+    Negative values lift the tile toward Blender's standard front-view
+    camera (−Y side) so it draws on top of its partner during the cross.
+    """
     for kf in keyframes:
         frame = int(kf["frame"])
         row = float(kf.get("row", 0.0))
         col = float(kf.get("col", 0.0))
         scale_v = float(kf.get("scale", 1.0))
-        dip = float(kf.get("dip", 0.0))
+        dip_flag = float(kf.get("dip", 0.0))
 
         x, _y, z = _world_pos(row, col, width, height)
-        tile.location = (x, dip, z)
+        y_offset = dip_amount if abs(dip_flag) > _DIP_EPSILON else 0.0
+        tile.location = (x, y_offset, z)
         tile.keyframe_insert(data_path="location", frame=frame, index=0)
         tile.keyframe_insert(data_path="location", frame=frame, index=1)
         tile.keyframe_insert(data_path="location", frame=frame, index=2)
@@ -497,6 +557,7 @@ def _apply_color_only_update(
     ctrl: bpy.types.Object,
     width: int,
     height: int,
+    dip_amount: float,
 ) -> int:
     """Re-skin the existing tile objects for a color-only diff. Tilebacks and
     object identity are left untouched. Returns the number of tiles touched."""
@@ -534,7 +595,7 @@ def _apply_color_only_update(
         # so animations stay aligned with the controller's reset transform.
         _parent_to_ctrl(tile, ctrl)
         tile.animation_data_clear()
-        _keyframe_tile(tile, keyframes, width, height)
+        _keyframe_tile(tile, keyframes, width, height, dip_amount)
         touched += 1
     return touched
 
@@ -580,6 +641,9 @@ def build_or_update(payload: dict) -> dict:
     # full priority chain (custom-when-toggled-and-valid → bundled →
     # empty for procedural fallback).
     asset_blend = ""
+    # Default dip mirrors the export's historic value so older preferences
+    # without `swap_dip_y` keep producing the same animation.
+    dip_amount = -0.14
     try:
         from .. import preferences
         prefs = preferences.get(bpy.context)
@@ -588,6 +652,8 @@ def build_or_update(payload: dict) -> dict:
         else:
             # Older preferences shape — treat asset_blend as the only source.
             asset_blend = getattr(prefs, "asset_blend", "") or ""
+        if hasattr(prefs, "swap_dip_y"):
+            dip_amount = float(prefs.swap_dip_y)
     except Exception:  # noqa: BLE001
         pass
     templates = _load_asset_templates(asset_blend)
@@ -660,63 +726,68 @@ def build_or_update(payload: dict) -> dict:
     wanted_tileback_names: set[str] = set()
     fast_path_used = False
 
-    if color_only_eligible:
-        touched = _apply_color_only_update(
-            pieces, tile_prefix, tiles_col, templates, ctrl, width, height,
-        )
-        if touched >= 0:
-            fast_path_used = True
-            wanted_tile_names = {
-                f"{tile_prefix}{p.get('id')}"
-                for p in pieces if p.get("id") and p.get("keyframes")
-            }
-            # Tilebacks are intentionally left as-is on the fast path. Discover
-            # the existing set so the response stays accurate.
-            for obj in tilebacks_col.objects:
-                if obj.name.startswith(tileback_prefix):
-                    wanted_tileback_names.add(obj.name)
+    # Force every keyframe_insert call below to use LINEAR interpolation.
+    # See _LinearKeyframeContext for the rationale (lock-step swap timing
+    # + lerped intermediate keys both rely on linear segments).
+    with _LinearKeyframeContext():
+        if color_only_eligible:
+            touched = _apply_color_only_update(
+                pieces, tile_prefix, tiles_col, templates, ctrl, width, height,
+                dip_amount,
+            )
+            if touched >= 0:
+                fast_path_used = True
+                wanted_tile_names = {
+                    f"{tile_prefix}{p.get('id')}"
+                    for p in pieces if p.get("id") and p.get("keyframes")
+                }
+                # Tilebacks are intentionally left as-is on the fast path.
+                # Discover the existing set so the response stays accurate.
+                for obj in tilebacks_col.objects:
+                    if obj.name.startswith(tileback_prefix):
+                        wanted_tileback_names.add(obj.name)
 
-    if not fast_path_used:
-        # ---- Tiles (structural / full rebuild) ----
-        for piece in pieces:
-            pid = str(piece.get("id"))
-            color_id = str(piece.get("color", "red"))
-            keyframes = piece.get("keyframes", []) or []
-            if not pid or not keyframes:
-                continue
-
-            tile_name = f"{tile_prefix}{pid}"
-            wanted_tile_names.add(tile_name)
-            tile = _ensure_tile_obj(tile_name, color_id, tiles_col, templates)
-            _parent_to_ctrl(tile, ctrl)
-            _keyframe_tile(tile, keyframes, width, height)
-
-        # ---- Tilebacks: one per non-gap cell, fixed at cell position ----
-        cell_dissolves = _collect_cell_dissolves(pieces)
-        gaps = _gap_mask(layout) if isinstance(layout, list) else None
-        for r in range(height):
-            for c in range(width):
-                if gaps is not None and r < len(gaps) and c < len(gaps[r]) and gaps[r][c]:
+        if not fast_path_used:
+            # ---- Tiles (structural / full rebuild) ----
+            for piece in pieces:
+                pid = str(piece.get("id"))
+                color_id = str(piece.get("color", "red"))
+                keyframes = piece.get("keyframes", []) or []
+                if not pid or not keyframes:
                     continue
-                tb_name = f"{tileback_prefix}{r}_{c}"
-                wanted_tileback_names.add(tb_name)
-                tileback = _ensure_tileback_obj(tb_name, tilebacks_col, templates)
-                x, _y, z = _world_pos(r, c, width, height)
-                tileback.location = (x, 0.0, z)
-                _parent_to_ctrl(tileback, ctrl)
-                _keyframe_tileback_pulse(
-                    tileback,
-                    start_frame,
-                    cell_dissolves.get((r, c), []),
-                )
 
-        if mode == "update":
-            for obj in list(tiles_col.objects):
-                if obj.name.startswith(tile_prefix) and obj.name not in wanted_tile_names:
-                    bpy.data.objects.remove(obj, do_unlink=True)
-            for obj in list(tilebacks_col.objects):
-                if obj.name.startswith(tileback_prefix) and obj.name not in wanted_tileback_names:
-                    bpy.data.objects.remove(obj, do_unlink=True)
+                tile_name = f"{tile_prefix}{pid}"
+                wanted_tile_names.add(tile_name)
+                tile = _ensure_tile_obj(tile_name, color_id, tiles_col, templates)
+                _parent_to_ctrl(tile, ctrl)
+                _keyframe_tile(tile, keyframes, width, height, dip_amount)
+
+            # ---- Tilebacks: one per non-gap cell, fixed at cell position ----
+            cell_dissolves = _collect_cell_dissolves(pieces)
+            gaps = _gap_mask(layout) if isinstance(layout, list) else None
+            for r in range(height):
+                for c in range(width):
+                    if gaps is not None and r < len(gaps) and c < len(gaps[r]) and gaps[r][c]:
+                        continue
+                    tb_name = f"{tileback_prefix}{r}_{c}"
+                    wanted_tileback_names.add(tb_name)
+                    tileback = _ensure_tileback_obj(tb_name, tilebacks_col, templates)
+                    x, _y, z = _world_pos(r, c, width, height)
+                    tileback.location = (x, 0.0, z)
+                    _parent_to_ctrl(tileback, ctrl)
+                    _keyframe_tileback_pulse(
+                        tileback,
+                        start_frame,
+                        cell_dissolves.get((r, c), []),
+                    )
+
+            if mode == "update":
+                for obj in list(tiles_col.objects):
+                    if obj.name.startswith(tile_prefix) and obj.name not in wanted_tile_names:
+                        bpy.data.objects.remove(obj, do_unlink=True)
+                for obj in list(tilebacks_col.objects):
+                    if obj.name.startswith(tileback_prefix) and obj.name not in wanted_tileback_names:
+                        bpy.data.objects.remove(obj, do_unlink=True)
 
     # ---- Restore the user's pose (update only) ----
     if saved_world is not None:

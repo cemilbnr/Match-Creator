@@ -6,6 +6,80 @@ Format is loosely based on [Keep a Changelog](https://keepachangelog.com/) and
 the project follows semantic versioning once it hits 1.0. Pre-1.0 releases are
 beta and may ship breaking changes between minor bumps.
 
+## [0.3.3-beta] — 2026-05-09
+
+Blender side animation correctness pass plus a brand-new addon
+auto-updater so the addon now versions and ships in lockstep with the
+desktop app. Same recorded variants now play back as: dragged piece
+visibly arcs above the partner along the −Y front-camera axis, both
+pieces start AND finish travel on exactly the same frame, and the
+addon can pull its own updates without manual zip dragging.
+
+### Added
+- **Blender addon auto-updater.** New `Updates` section in addon
+  preferences with `Check for updates` / `Install update` /
+  `Open releases page` actions. Mirrors the desktop app's Tauri
+  updater flow — the addon polls
+  `https://github.com/cemilbnr/Match-Creator/releases/latest/download/addon-latest.json`,
+  compares `version_tuple` to the installed `ADDON_VERSION_TUPLE`, and
+  on confirmation downloads the bundled zip and extracts it over the
+  current install (Blender restart still required because Python
+  doesn't reliably reload registered classes / properties).
+- **Single source of truth for versioning.** `ADDON_VERSION_TUPLE` and
+  `ADDON_VERSION_STRING` constants in `blender-addon/__init__.py` track
+  the desktop app's version one-to-one. v0.3.3-beta is the first joint
+  release; future releases bump both together.
+- **Addon preference: `Swap dip (Y)`.** New FloatProperty in the
+  Animation group (default `-0.14`, range −1.0 … +1.0) controls the
+  Y-axis offset applied to the dragged tile at the peak of a swap. The
+  export sends a non-zero `dip` flag for swap keyframes; the addon
+  substitutes the user's preference value at write time so the arc
+  depth (and direction) is tunable from Blender preferences without
+  touching the desktop app. Set to `0` for a flat swap.
+- **Bundled `MC_Assets.blend`** ships inside the addon at
+  `blender-addon/assets/MC_Assets.blend` (carried over from 0.3.2's
+  trailing updates). Fresh installs use it automatically; the
+  preferences panel exposes a `Use custom asset set` toggle that gates
+  the existing `Custom asset .blend` path field. `effective_asset_blend()`
+  resolves the priority chain (custom-when-toggled-and-valid →
+  bundled → empty for procedural fallback).
+
+### Fixed
+- **Swap timing was asymmetric.** The export wrote 4 keyframes for the
+  FROM piece (frames 0, 1, 4, 5) and 2 for the TO piece (0, 5),
+  freezing FROM at its origin and destination for one frame each. With
+  bezier interpolation that meant FROM only moved during frames 1–4
+  while TO moved across all 5 — TO appeared to start moving FIRST,
+  reading as "the wrong tile got picked up". Both pieces now travel in
+  lock-step over the full FRAMES_SWAP window. Intermediate FROM
+  keyframes that carry the dip use lerped (row, col) positions so X/Z
+  motion stays uniform.
+- **Dragged piece rendered behind partner.** Y-dip is `-0.14` in the
+  export (negative Y), which in Blender's standard front-view setup
+  (camera on the −Y side looking toward +Y) sits CLOSER to the camera.
+  The dragged tile now visibly arcs above its partner during the
+  cross. The addon forwards the value straight through so the schema
+  doubles as the literal Y offset.
+- Invalid-swap bounce-back now uses the same symmetric 4-key lerp
+  pattern on the way home, so a fail swap mirrors a successful one
+  exactly except for the final position.
+- **Addon load on Blender 5.0** (`AttributeError: 'Action' object has
+  no attribute 'fcurves'`). The fcurves graph traversal helper was
+  replaced with a `_LinearKeyframeContext` context manager that flips
+  `bpy.context.preferences.edit.keyframe_new_interpolation_type` to
+  `LINEAR` for the duration of the build and restores it afterward.
+  Works on legacy actions (≤ 4.3) and slotted actions (4.4+ / 5.0)
+  without touching the action graph.
+
+### Changed
+- **Addon: LINEAR keyframe interpolation across the board.** Tile
+  location/scale and tileback scale fcurves are now LINEAR for every
+  build (via the new context manager). Match-3 swaps and falls are
+  intentionally on rails — the default Bezier interpolation distorted
+  the lock-step timing the export carefully sets up. This is also a
+  prerequisite for the new intermediate-position keyframes to land on
+  the correct linear track.
+
 ## [0.3.2-beta] — 2026-05-07
 
 Sequencer / Generator quality-of-life pass plus a Blender-side timeline
