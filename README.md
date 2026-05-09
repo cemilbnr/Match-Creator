@@ -199,8 +199,6 @@ MATCH_CREATOR/
   flow, schema versioning.
 - [docs/ASSET_SPEC.md](docs/ASSET_SPEC.md) — custom `MC_Assets.blend`
   convention for bringing your own tile art and materials.
-- [docs/RELEASING.md](docs/RELEASING.md) — how to cut a signed release
-  (key setup, version bump, signed MSI, `latest.json`, GitHub Release).
 
 ## Reporting issues
 

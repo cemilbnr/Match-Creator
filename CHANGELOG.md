@@ -9,17 +9,12 @@ beta and may ship breaking changes between minor bumps.
 ## [0.3.4-beta] — 2026-05-09
 
 UI / window-narrow polish, zoom + pan fixes for Generator and Analyzer,
-sequencer first-match grid clobber fix, addon folder rename made
-canonical, and a new `docs/PRIORITIES.md` capturing the recurring
-conventions so future-me doesn't relearn them.
+sequencer first-match grid clobber fix, and the addon folder rename
+made canonical.
 
 ### Added
-- `docs/PRIORITIES.md` — living document for the lockstep versioning
-  rule, animation-correctness invariants, no-Claude-trailer policy, and
-  the running queue of design decisions to remember when touching things.
 - README badges (release / downloads / license / platform / Blender /
-  last-commit). Currently shields.io; shieldcn.dev migration noted in
-  PRIORITIES.md.
+  last-commit) via shields.io.
 
 ### Fixed
 - **Sequencer: first match clobbered the dissolved tiles.** Auto-creating
@@ -329,9 +324,9 @@ breaking changes to saved data.
   swallowing them completely, so debugging connectivity issues is easier.
 
 ### Changed
-- Versioning rule during beta documented in `docs/RELEASING.md`: patch
-  bumps per release, minor bumps only for major feature milestones
-  (`0.2.9` → `0.3.0`, never skipping patches).
+- Versioning rule during beta: patch bumps per release, minor bumps only
+  for major feature milestones (`0.2.9` → `0.3.0`, never skipping
+  patches).
 
 ## [0.2.0-beta] — 2026-04-23
 
@@ -343,9 +338,6 @@ breaking changes to saved data.
   install spinner, and a dismissible error row.
 - Settings → Updates section showing the installed version and a manual
   "Check for updates" button.
-- `docs/RELEASING.md` documents how to cut a signed release end-to-end
-  (key setup, version bump, signed MSI, `latest.json`, GitHub Release).
-
 ### Changed
 - Version bumped to `0.2.0` across `package.json`, `tauri.conf.json`, and
   `Cargo.toml`. First release built with the updater baked in.
