@@ -6,6 +6,58 @@ Format is loosely based on [Keep a Changelog](https://keepachangelog.com/) and
 the project follows semantic versioning once it hits 1.0. Pre-1.0 releases are
 beta and may ship breaking changes between minor bumps.
 
+## [0.3.4-beta] — 2026-05-09
+
+UI / window-narrow polish, zoom + pan fixes for Generator and Analyzer,
+sequencer first-match grid clobber fix, addon folder rename made
+canonical, and a new `docs/PRIORITIES.md` capturing the recurring
+conventions so future-me doesn't relearn them.
+
+### Added
+- `docs/PRIORITIES.md` — living document for the lockstep versioning
+  rule, animation-correctness invariants, no-Claude-trailer policy, and
+  the running queue of design decisions to remember when touching things.
+- README badges (release / downloads / license / platform / Blender /
+  last-commit). Currently shields.io; shieldcn.dev migration noted in
+  PRIORITIES.md.
+
+### Fixed
+- **Sequencer: first match clobbered the dissolved tiles.** Auto-creating
+  a variant on the user's first swap was triggering GameplaySequencer's
+  board-reload effect, which immediately reset the just-animated post-
+  match grid back to the original board layout — matched tiles flashed
+  gone and came back. The store now bumps a `silentVariantStamp` when the
+  auto-create flow sets `activeVariantId`, and the panel's effect
+  recognises that and skips the reload. Manual variant switches still
+  trigger the reload as expected.
+- **Board Generator: zoom + pan.** Canvas viewport switched from
+  `flex-center + overflow-auto` (which clipped the left/top side of an
+  overflowing canvas) to a `min-w-full min-h-full` centring pattern.
+  Both axes pan cleanly when the canvas is bigger than the viewport.
+  Max zoom bumped 64 → 128 px per cell; step 6 → 8 so each click moves a
+  noticeable amount at the larger end of the range.
+- **Board Analyzer: zoom + pan.** CSS `zoom` replaces `transform:
+  scale` so the scaled image participates in layout — the workspace's
+  overflow finally tracks the zoomed dimensions and pan/scroll work at
+  any zoom level. (Tauri's WebView2 supports CSS `zoom`; Firefox does
+  not, but the desktop app doesn't ship to Firefox.)
+- **PageHeader narrow-window subtitle wrap.** Previously a busy actions
+  row would squeeze the subtitle into a single-word vertical column.
+  Subtitle now truncates with an ellipsis (tooltip carries the full
+  text). Actions row gets `flex-wrap` so it can break onto multiple
+  lines instead of starving the title column.
+
+### Changed
+- **Board Analyzer zoom widget** moved from a floating overlay on the
+  workspace canvas into the page header, matching the BoardGenerator
+  affordance. Same `IconButton + percentage readout + IconButton` layout;
+  clicking the readout still resets to 100%.
+- **Addon folder rename: `blender-addon` → `match_creator_addon`** is now
+  the canonical layout (the v0.3.3 hotfix shipped this in-place; v0.3.4
+  formalises it). `bl_info` is a pure literal dict and
+  `ADDON_VERSION_TUPLE` reads from `bl_info["version"]` — keeps the
+  scanner happy AND the runtime single-source.
+
 ## [0.3.3-beta] — 2026-05-09
 
 Blender side animation correctness pass plus a brand-new addon
