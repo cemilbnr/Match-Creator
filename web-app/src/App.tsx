@@ -4,6 +4,7 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { BoardAnalyzer } from './features/boardAnalyzer/BoardAnalyzer';
 import { BoardGenerator } from './features/boardGenerator/BoardGenerator';
 import { BoardLibrary } from './features/boardLibrary/BoardLibrary';
+import { GameplayGenerator } from './features/gameplayGenerator/GameplayGenerator';
 import { GameplaySequencer } from './features/gameplaySequencer/GameplaySequencer';
 import { SettingsPanel } from './features/settings/SettingsPanel';
 import { useBlenderSessionStore } from './store/sessionStore';
@@ -34,6 +35,7 @@ export default function App() {
       {activePanel === 'board-generator' && <BoardGenerator />}
       {activePanel === 'board-analyzer' && <BoardAnalyzer />}
       {activePanel === 'board-library' && <BoardLibrary />}
+      {activePanel === 'gameplay-generator' && <GameplayGenerator />}
       {activePanel === 'gameplay-sequencer' && <GameplaySequencer />}
       {activePanel === 'settings' && <SettingsPanel />}
     </AppShell>

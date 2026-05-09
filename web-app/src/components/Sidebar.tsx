@@ -6,6 +6,7 @@ import {
   BoardsIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  GameplayGenIcon,
   GameplayIcon,
   LayersIcon,
   SettingsIcon,
@@ -18,6 +19,7 @@ const ICONS: Record<PanelId, IconType> = {
   'board-generator': BoardsIcon as IconType,
   'board-analyzer': ViewfinderIcon as IconType,
   'board-library': LayersIcon as IconType,
+  'gameplay-generator': GameplayGenIcon as IconType,
   'gameplay-sequencer': GameplayIcon as IconType,
   settings: SettingsIcon as IconType,
 };

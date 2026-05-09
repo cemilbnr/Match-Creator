@@ -8,7 +8,7 @@
 bl_info = {
     "name": "Match-3 Animator",
     "author": "cEMIL",
-    "version": (0, 3, 4),
+    "version": (0, 3, 5),
     "blender": (4, 2, 0),
     "location": "3D View Header + N-Panel > Match-3",
     "description": "Receives match-3 gameplay variants from the Match Creator desktop app and animates them.",
@@ -21,7 +21,7 @@ bl_info = {
 # literal in one place; ADDON_VERSION_STRING carries the `-beta` suffix that
 # Blender's tuple-only `version` field can't represent.
 ADDON_VERSION_TUPLE = bl_info["version"]
-ADDON_VERSION_STRING = "0.3.4-beta"
+ADDON_VERSION_STRING = "0.3.5-beta"
 
 import bpy
 

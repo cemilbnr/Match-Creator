@@ -24,7 +24,7 @@ Thumbs.db
 .idea/
 
 # --- Claude / planning artefacts live outside the repo ---
-.claude/settings.local.json
+.claude/
 
 # --- Build outputs / release packages ---
 releases/
@@ -51,3 +51,15 @@ Match_Creator_Frontend/
 
 # --- Asset source folders (canonical asset lives at match_creator_addon/assets/) ---
 blender_default_asset/
+
+# --- Internal-only docs (local reference, never publish) ---
+# These markdown files live in docs/ but are private design notes,
+# release recipes with secrets, or design references the maintainer
+# wants on disk but not on GitHub. See docs/SECURITY.md for the full
+# table + rationale. Add new private docs here AND in SECURITY.md in
+# the same change.
+docs/PRIORITIES.md
+docs/RELEASING.md
+docs/BLENDER_BOARD_CONTROLLER_SPEC.md
+docs/SECURITY.md
+docs/style-reference.png

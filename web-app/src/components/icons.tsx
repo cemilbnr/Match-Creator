@@ -259,10 +259,23 @@ export function BrushIcon(p: IconProps) {
   );
 }
 
+export function WandIcon(p: IconProps) {
+  return (
+    <svg {...stroke} {...p}>
+      <path d="M4 20 L14 10" />
+      <path d="M14 10 L18 6" />
+      <path d="M17 3 L17 7 M15 5 L19 5" />
+      <path d="M7 4 L7 7 M5.5 5.5 L8.5 5.5" />
+      <path d="M20 13 L20 17 M18 15 L22 15" />
+    </svg>
+  );
+}
+
 // Pipeline step icons for sidebar nav
 export { GridIcon as BoardsIcon };
 export { FilmIcon as GameplayIcon };
 export { BoxIcon as BlenderIcon };
+export { WandIcon as GameplayGenIcon };
 
 // Re-export the existing transport icons so callers can keep one import site.
 export {

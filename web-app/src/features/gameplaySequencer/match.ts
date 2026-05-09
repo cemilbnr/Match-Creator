@@ -2,8 +2,9 @@ import type { Cell, PieceColor } from '../../types';
 
 const COLORS: PieceColor[] = ['red', 'blue', 'green', 'yellow'];
 
-export function randomPiece(): PieceColor {
-  return COLORS[Math.floor(Math.random() * COLORS.length)]!;
+export function randomPiece(colors: PieceColor[] = COLORS): PieceColor {
+  if (colors.length === 0) return COLORS[0]!;
+  return colors[Math.floor(Math.random() * colors.length)]!;
 }
 
 /** A cell is "piece-like" if it holds one of the four colors — i.e. not a
@@ -114,9 +115,15 @@ export function removeMatched(grid: Cell[][], matched: Set<string>): Cell[][] {
 
 /**
  * Pieces fall down to the bottom of each column; empty slots at the top
- * get filled with new random pieces.
+ * get filled with new random pieces. The `colors` palette restricts which
+ * colors can spawn — defaults to all four when omitted, so the Sequencer's
+ * existing 4-color cascades stay unchanged. The Gameplay Generator passes
+ * a 2-/3-color palette when the user picks a smaller color count.
  */
-export function applyGravityAndSpawn(grid: Cell[][]): Cell[][] {
+export function applyGravityAndSpawn(
+  grid: Cell[][],
+  colors?: PieceColor[],
+): Cell[][] {
   const h = grid.length;
   const w = grid[0]?.length ?? 0;
   const next: Cell[][] = Array.from({ length: h }, () =>
@@ -136,7 +143,8 @@ export function applyGravityAndSpawn(grid: Cell[][]): Cell[][] {
       }
       const segLen = segEnd - segStart;
       const empties = segLen - pieces.length;
-      for (let i = 0; i < empties; i++) next[segStart + i]![c] = randomPiece();
+      for (let i = 0; i < empties; i++)
+        next[segStart + i]![c] = randomPiece(colors);
       for (let i = 0; i < pieces.length; i++) {
         next[segStart + empties + i]![c] = pieces[i]!;
       }
@@ -167,6 +175,7 @@ export interface CascadeStep {
 export function simulateCascade(
   startGrid: Cell[][],
   cascadeEnabled: boolean,
+  colors?: PieceColor[],
 ): { finalGrid: Cell[][]; steps: CascadeStep[] } {
   let grid = startGrid;
   const steps: CascadeStep[] = [];
@@ -174,7 +183,7 @@ export function simulateCascade(
   let safety = 0;
   while (matches.size > 0 && safety++ < 50) {
     const after = cascadeEnabled
-      ? applyGravityAndSpawn(removeMatched(grid, matches))
+      ? applyGravityAndSpawn(removeMatched(grid, matches), colors)
       : removeMatched(grid, matches);
     steps.push({
       matched: Array.from(matches),
@@ -257,15 +266,18 @@ export function computeCascadeDelta(
  *   - Any pre-existing matches get resolved until the grid is stable,
  *     so the player starts on a clean board.
  */
-export function initializeGrid(layout: Cell[][]): Cell[][] {
+export function initializeGrid(
+  layout: Cell[][],
+  colors?: PieceColor[],
+): Cell[][] {
   let grid: Cell[][] = layout.map((row) =>
-    row.map((cell) => (cell === null ? randomPiece() : cell)),
+    row.map((cell) => (cell === null ? randomPiece(colors) : cell)),
   );
   let guard = 0;
   while (guard++ < 100) {
     const matches = findMatches(grid);
     if (matches.size === 0) break;
-    grid = applyGravityAndSpawn(removeMatched(grid, matches));
+    grid = applyGravityAndSpawn(removeMatched(grid, matches), colors);
   }
   return grid;
 }

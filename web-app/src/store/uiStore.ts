@@ -5,6 +5,7 @@ export type PanelId =
   | 'board-generator'
   | 'board-analyzer'
   | 'board-library'
+  | 'gameplay-generator'
   | 'gameplay-sequencer'
   | 'settings';
 
@@ -17,6 +18,7 @@ export const PANELS: PanelDef[] = [
   { id: 'board-generator', label: 'Board Generator' },
   { id: 'board-analyzer', label: 'Board Analyzer' },
   { id: 'board-library', label: 'Board Library' },
+  { id: 'gameplay-generator', label: 'Gameplay Generator' },
   { id: 'gameplay-sequencer', label: 'Gameplay Sequencer' },
   { id: 'settings', label: 'Settings' },
 ];

@@ -6,6 +6,50 @@ Format is loosely based on [Keep a Changelog](https://keepachangelog.com/) and
 the project follows semantic versioning once it hits 1.0. Pre-1.0 releases are
 beta and may ship breaking changes between minor bumps.
 
+## [0.3.5-beta] — 2026-05-09
+
+New **Gameplay Generator** sidebar panel (marked WIP) for designing
+match-3 sequences from drawn paths instead of recording every swap by
+hand in the Sequencer. Algorithm and UI are still iterating; banner at
+the top of the panel makes the WIP status explicit.
+
+### Added
+- **Gameplay Generator panel.** Draw freehand paths over an empty
+  board, configure shape weights (3-line, 4-line, 2x2, 3x2, 4x2),
+  thickness, color count, and seeds, then generate a deterministic
+  match sequence + filled board ready to send to the Sequencer.
+  Preview replays match-by-match with ←/→ keys; Send-to-Sequencer
+  saves the result as a new Board + GameplayVariant in the library.
+- **Secondary-match planning.** Each primary placement can attach a
+  secondary near-match around its swap-source cell, so a single swap
+  fires two simultaneous matches. Slider in the right rail; planned
+  secondary cells render with `N-S` badges live during drawing.
+- **Path-thickness, shape-mix, and per-channel seed controls** in the
+  generator's right rail. Path seed drives placement geometry;
+  generate seed drives board fill colors independently.
+- **`match.ts` palette parameter.** `applyGravityAndSpawn`,
+  `simulateCascade`, `initializeGrid`, and `randomPiece` now accept
+  an optional `colors` palette so the generator can run cascades with
+  a reduced color count (2/3/4) without affecting Sequencer behaviour
+  (default remains the full 4-color palette).
+
+### Algorithm
+- **Cursor-walk placement is prefix-stable.** Path is processed cell
+  by cell in draw order with a deterministic RNG stream, so extending
+  a path while drawing only appends new placements — already-drawn
+  matches don't shift around as the user keeps moving the pointer.
+- **Board fill validates per-swap.** Each candidate fill colour is
+  rejected if the test cell would join an unintended match in any of
+  the planned swaps, on top of the existing static no-match check.
+  Stops free-fill cells from secretly extending a planned 3-line into
+  a 4-line or co-firing with an adjacent placement.
+
+### Known limitations
+- Generator is WIP; dense boards or high secondary-match probability
+  can still produce a few warnings or skipped placements (palette /
+  edge constraints). Surface lives behind a yellow banner at the top
+  of the panel until the algorithm stabilises.
+
 ## [0.3.4-beta] — 2026-05-09
 
 UI / window-narrow polish, zoom + pan fixes for Generator and Analyzer,
