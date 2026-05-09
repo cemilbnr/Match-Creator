@@ -46,6 +46,7 @@ export function GameplaySequencer() {
 
   const activeVariantId = useSequencer((s) => s.activeVariantId);
   const setActiveVariantId = useSequencer((s) => s.setActiveVariantId);
+  const silentVariantStamp = useSequencer((s) => s.silentVariantStamp);
   const editingVariantId = useSequencer((s) => s.editingVariantId);
   const beginEditVariant = useSequencer((s) => s.beginEditVariant);
   const cellSize = useSequencer((s) => s.cellSize);
@@ -79,13 +80,34 @@ export function GameplaySequencer() {
     setBoardId(newest.id);
   }, [boardId, boards, setBoardId]);
 
+  // Track the last silent-variant stamp we acknowledged. When the
+  // sequencer auto-creates a variant on the user's first match, the
+  // store bumps `silentVariantStamp` alongside the activeVariantId
+  // change so we can recognise it here and skip the loadBoard call —
+  // otherwise the post-match grid would get clobbered back to the
+  // original layout (matched tiles flash gone then come back).
+  const lastSilentStampRef = useRef(silentVariantStamp);
+
   useEffect(() => {
+    // Silent (auto-create) variant change: just sync the ref and bail.
+    // The grid is already in the state the user expects (post-match).
+    if (silentVariantStamp !== lastSilentStampRef.current) {
+      lastSilentStampRef.current = silentVariantStamp;
+      return;
+    }
     if (!board || !effectiveLayout) return;
     // Don't trample the playable grid while the user is editing — the editor
     // operates on a separate store and we only want to reload after commit.
     if (editingVariantId) return;
     loadBoard(effectiveLayout);
-  }, [board?.id, activeVariantId, effectiveLayout, editingVariantId, loadBoard]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    board?.id,
+    activeVariantId,
+    effectiveLayout,
+    editingVariantId,
+    loadBoard,
+    silentVariantStamp,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Default variant: most recent for the active board. Auto-commit creates one
   // on the first drag if none exists, so we only pick one here if there's a

@@ -8,6 +8,8 @@ import {
   TrashIcon,
   UndoIcon,
   ViewfinderIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
 } from '../../components/icons';
 import { Button, Field, IconButton, PageHeader, Pill, Section } from '../../components/ui';
 import type { Board, Cell, PieceColor } from '../../types';
@@ -691,6 +693,15 @@ export function BoardAnalyzer() {
 
   // --- Render -------------------------------------------------------------
 
+  // Zoom widget mirrors the BoardGenerator's pattern (IconButton + readout +
+  // IconButton inside a single bordered group). Lives in the header so it
+  // sits next to the page-level controls instead of floating over the
+  // workspace canvas the way it used to.
+  const zoomClamp = (v: number) =>
+    Math.min(4, Math.max(0.25, Math.round(v * 100) / 100));
+  const canZoomOutAnalyzer = zoom > 0.25;
+  const canZoomInAnalyzer = zoom < 4;
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <PageHeader
@@ -699,6 +710,34 @@ export function BoardAnalyzer() {
         subtitle="Recover a board from a screenshot."
         actions={
           <>
+            {hasImage && (
+              <div className="flex items-center rounded-md border border-neutral-800 bg-neutral-950">
+                <IconButton
+                  size="sm"
+                  onClick={() => setZoom(zoomClamp(zoom - 0.25))}
+                  disabled={!canZoomOutAnalyzer}
+                  title="Zoom out"
+                >
+                  <ZoomOutIcon />
+                </IconButton>
+                <button
+                  type="button"
+                  onClick={() => setZoom(1)}
+                  className="min-w-[3rem] rounded px-1 py-0.5 text-[11px] tabular-nums text-neutral-400 hover:text-neutral-100"
+                  title="Reset zoom to 100%"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <IconButton
+                  size="sm"
+                  onClick={() => setZoom(zoomClamp(zoom + 0.25))}
+                  disabled={!canZoomInAnalyzer}
+                  title="Zoom in"
+                >
+                  <ZoomInIcon />
+                </IconButton>
+              </div>
+            )}
             <Button
               variant="secondary"
               disabled={!canSave}
@@ -765,7 +804,6 @@ export function BoardAnalyzer() {
           setCalibration={setCalibration}
           cellSize={cellSize}
           zoom={zoom}
-          onZoomChange={setZoom}
           rects={rects}
           draft={draft}
           allRects={allRects}
@@ -1127,7 +1165,6 @@ interface CenterWorkspaceProps {
   setCalibration: (r: Rect | null) => void;
   cellSize: number | null;
   zoom: number;
-  onZoomChange: (z: number) => void;
   rects: Rect[];
   draft: Rect | null;
   allRects: Rect[];
@@ -1162,7 +1199,6 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
     setCalibration,
     cellSize,
     zoom,
-    onZoomChange,
     rects,
     draft,
     allRects,
@@ -1191,8 +1227,14 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
 
   return (
     <div className="flex min-h-0 flex-col overflow-hidden">
+      {/* Scroll viewport: only `overflow-auto` on this layer. The inner
+          centring wrapper uses min-w-full / min-h-full so the image is
+          centred when smaller than the viewport AND grows past it when
+          zoomed in (the CSS-`zoom` on ImageSurface participates in layout,
+          so the parent's overflow tracks the scaled size cleanly — pan /
+          scroll work in both axes). */}
       <div
-        className={`relative flex min-h-0 flex-1 items-center justify-center overflow-auto bg-neutral-900/40 p-6 transition ${
+        className={`relative min-h-0 flex-1 overflow-auto bg-neutral-900/40 p-6 transition ${
           dragOver ? 'bg-neutral-800/60 ring-2 ring-inset ring-neutral-500' : ''
         }`}
         onDragOver={(e) => {
@@ -1202,32 +1244,33 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
       >
-        {imageUrl ? (
-          <ImageSurface
-            imageUrl={imageUrl}
-            naturalSize={naturalSize}
-            onNaturalSize={onNaturalSize}
-            cropMode={cropMode}
-            cropSubMode={cropSubMode}
-            calibration={calibration}
-            setCalibration={setCalibration}
-            rects={rects}
-            draft={draft}
-            allRects={allRects}
-            setDraft={setDraft}
-            commitRects={commitRects}
-            replaceRects={replaceRects}
-            deleteRect={deleteRect}
-            groups={groups}
-            analyses={analyses}
-            brushEnabled={brushEnabled}
-            onPaintCell={onPaintCell}
-            zoom={zoom}
-          />
-        ) : (
-          <EmptyState />
-        )}
-        {imageUrl && <ZoomOverlay zoom={zoom} onChange={onZoomChange} />}
+        <div className="flex min-h-full min-w-full items-center justify-center">
+          {imageUrl ? (
+            <ImageSurface
+              imageUrl={imageUrl}
+              naturalSize={naturalSize}
+              onNaturalSize={onNaturalSize}
+              cropMode={cropMode}
+              cropSubMode={cropSubMode}
+              calibration={calibration}
+              setCalibration={setCalibration}
+              rects={rects}
+              draft={draft}
+              allRects={allRects}
+              setDraft={setDraft}
+              commitRects={commitRects}
+              replaceRects={replaceRects}
+              deleteRect={deleteRect}
+              groups={groups}
+              analyses={analyses}
+              brushEnabled={brushEnabled}
+              onPaintCell={onPaintCell}
+              zoom={zoom}
+            />
+          ) : (
+            <EmptyState />
+          )}
+        </div>
       </div>
 
       <BottomToolbar
@@ -1251,48 +1294,6 @@ function CenterWorkspace(props: CenterWorkspaceProps) {
   );
 }
 
-// ---------- Zoom overlay --------------------------------------------------
-
-/** Floating zoom control pinned to the top-right of the image workspace.
- *  Discrete ±25% steps between 0.25× and 4×; clicking the percentage
- *  resets to 100%. */
-function ZoomOverlay({
-  zoom,
-  onChange,
-}: {
-  zoom: number;
-  onChange: (z: number) => void;
-}) {
-  const clamp = (v: number) => Math.min(4, Math.max(0.25, Math.round(v * 100) / 100));
-  return (
-    <div className="absolute right-4 top-4 flex items-center gap-0.5 rounded-md border border-neutral-800 bg-neutral-950/90 p-0.5 shadow-lg backdrop-blur">
-      <button
-        type="button"
-        onClick={() => onChange(clamp(zoom - 0.25))}
-        className="inline-flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
-        title="Zoom out"
-      >
-        −
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange(1)}
-        className="inline-flex h-7 min-w-[3.5rem] items-center justify-center rounded px-1 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
-        title="Reset zoom to 100%"
-      >
-        {Math.round(zoom * 100)}%
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange(clamp(zoom + 0.25))}
-        className="inline-flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100"
-        title="Zoom in"
-      >
-        +
-      </button>
-    </div>
-  );
-}
 
 function EmptyState() {
   return (
@@ -1815,10 +1816,20 @@ function ImageSurface(props: ImageSurfaceProps) {
   };
 
   return (
-    <div className="relative flex items-center justify-center">
+    // Switched the outer wrapper from flex-center to a plain inline-block
+    // because CSS `zoom` (used below) DOES affect layout, so the natural
+    // overflow on the workspace parent picks the zoomed dimensions up
+    // automatically. With the previous flex-center, an overflowing scaled
+    // image would clip the left/top side and leave it unreachable.
+    <div className="relative inline-block">
       <div
-        className="relative inline-block origin-top-left"
-        style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+        className="relative inline-block"
+        // Using CSS `zoom` (Chromium / WebView2 / Safari — NOT Firefox) so
+        // the scaled box participates in layout. `transform: scale` would
+        // visually grow but leave the layout box pinned at zoom=1, which is
+        // why pan/scroll didn't work for the user before. Tauri ships
+        // WebView2 (Chromium-based) so this is supported.
+        style={{ zoom }}
       >
         <img
           ref={imgRef}

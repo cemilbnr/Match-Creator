@@ -327,8 +327,15 @@ export function BoardGenerator() {
           />
         </aside>
 
-        <section className="flex items-start justify-center overflow-auto rounded-lg border border-neutral-800 bg-neutral-950">
-          <div className="flex min-h-full items-center p-6">
+        {/* Canvas viewport. Section is the scroll container (`overflow-auto`).
+            The inner wrapper uses `min-w-full min-h-full` so it fills the
+            section when the canvas is smaller (centred via flex-center) AND
+            grows past the section when a zoomed-in canvas overflows — which
+            is what makes both axes actually pannable. Without `min-w-full`,
+            `justify-center` on an overflowing child clips the left side and
+            leaves it unreachable. */}
+        <section className="overflow-auto rounded-lg border border-neutral-800 bg-neutral-950">
+          <div className="flex min-h-full min-w-full items-center justify-center p-6">
             <GridCanvas
               width={width}
               height={height}

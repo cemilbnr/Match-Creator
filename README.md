@@ -1,5 +1,16 @@
 # Match Creator
 
+[![Latest release](https://img.shields.io/github/v/release/cemilbnr/Match-Creator?include_prereleases&display_name=tag&label=release&color=10b981)](https://github.com/cemilbnr/Match-Creator/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/cemilbnr/Match-Creator/total?color=3b82f6&label=downloads)](https://github.com/cemilbnr/Match-Creator/releases)
+[![License](https://img.shields.io/github/license/cemilbnr/Match-Creator?color=eab308)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows-0ea5e9?logo=windows&logoColor=white)](https://github.com/cemilbnr/Match-Creator/releases/latest)
+[![Blender](https://img.shields.io/badge/Blender-4.2%2B-f97316?logo=blender&logoColor=white)](https://www.blender.org/download/)
+[![Last commit](https://img.shields.io/github/last-commit/cemilbnr/Match-Creator?color=8b5cf6)](https://github.com/cemilbnr/Match-Creator/commits/main)
+
+> Badges currently use [shields.io](https://shields.io); migrating to
+> [shieldcn.dev](https://shieldcn.dev/) for the shadcn-themed look once its
+> URL patterns settle (see `docs/PRIORITIES.md`).
+
 Hybrid Blender add-on + desktop app for designing match-3 boards and
 scripting gameplay animations for marketing videos. Paint a board, record
 a sequence of swaps and matches, then ship the whole variant into Blender

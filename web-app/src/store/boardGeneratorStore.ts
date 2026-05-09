@@ -42,9 +42,13 @@ function normalizeRect(r: SelectionRect, height: number, width: number): Selecti
   return { r0, c0, r1, c1 };
 }
 
+// Zoom bounds for the generator canvas. MAX bumped 64 → 128 so big boards
+// (or finely-painted small ones) can be inspected at higher pixel density;
+// step bumped 6 → 8 so each click moves a noticeable amount at the larger
+// end of the range.
 const MIN_GEN_CELL = 20;
-const MAX_GEN_CELL = 64;
-const GEN_CELL_STEP = 6;
+const MAX_GEN_CELL = 128;
+const GEN_CELL_STEP = 8;
 
 function emptyLayout(width: number, height: number): Cell[][] {
   return Array.from({ length: height }, () =>

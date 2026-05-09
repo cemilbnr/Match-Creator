@@ -107,6 +107,16 @@ interface SequencerState {
    *  steps and exits early when true. Reset to false at the start of each
    *  replay so a fresh Play always runs the full sequence. */
   replayAborted: boolean;
+  /**
+   * Monotonic counter bumped whenever activeVariantId is changed silently —
+   * i.e. for the auto-create-on-first-match flow. The GameplaySequencer
+   * panel's board-reload useEffect compares this against its own
+   * last-seen value and skips the reload when it just incremented, so the
+   * grid we just animated to a post-match state isn't clobbered back to
+   * the original board layout. Manual variant switches don't touch this
+   * counter and therefore still trigger the reload as expected.
+   */
+  silentVariantStamp: number;
 
   /**
    * When non-null the sequencer is in "edit board" mode for this variant —
@@ -416,7 +426,14 @@ function commitMatchToActiveVariant(
     const scoped = variants.variants.filter((v) => v.boardId === sequencer.boardId);
     const name = `Variant ${scoped.length + 1}`;
     targetId = variants.createEmptyVariant(name, sequencer.boardId);
-    useSequencer.setState({ activeVariantId: targetId });
+    // Silent activeVariantId update — bumping `silentVariantStamp` lets the
+    // GameplaySequencer's board-reload useEffect recognise this as the
+    // auto-create flow and skip its loadBoard call. Without the bump, the
+    // useEffect would clobber the post-match grid we just animated.
+    useSequencer.setState((s) => ({
+      activeVariantId: targetId,
+      silentVariantStamp: s.silentVariantStamp + 1,
+    }));
   }
 
   useVariants.getState().appendMatchToVariant(targetId, record);
@@ -661,6 +678,7 @@ export const useSequencer = create<SequencerState>((set, get) => ({
   activeVariantId: null,
   isReplaying: false,
   replayAborted: false,
+  silentVariantStamp: 0,
   editingVariantId: null,
 
   cellSize: DEFAULT_CELL_SIZE,

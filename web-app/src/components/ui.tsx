@@ -182,7 +182,7 @@ export function PageHeader({
   return (
     <header className="flex flex-col gap-3 border-b border-neutral-800 bg-neutral-950 px-6 pb-3 pt-5">
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {eyebrow && (
             <div className="text-xs text-neutral-500">{eyebrow}</div>
           )}
@@ -190,10 +190,25 @@ export function PageHeader({
             {title}
           </h1>
           {subtitle && (
-            <p className="mt-0.5 text-sm text-neutral-500">{subtitle}</p>
+            // truncate (= whitespace-nowrap + overflow-hidden + text-ellipsis)
+            // so a busy actions row can't squish the subtitle into a vertical
+            // column of single-word lines on narrow windows. `title` attribute
+            // carries the full string for hover-tooltip recovery.
+            <p
+              className="mt-0.5 truncate text-sm text-neutral-500"
+              title={subtitle}
+            >
+              {subtitle}
+            </p>
           )}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {actions && (
+          // flex-wrap lets the action row break onto multiple lines on narrow
+          // windows instead of starving the title column of horizontal space.
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {actions}
+          </div>
+        )}
       </div>
       {tabs && <div className="-mb-px">{tabs}</div>}
     </header>
